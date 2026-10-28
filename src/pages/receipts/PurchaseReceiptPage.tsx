@@ -112,6 +112,14 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
     reader.readAsDataURL(file);
   };
 
+  // A ticket on consolidated "حديد" lines: the receiver enters the steel quantity on the item itself,
+  // and the scale net weight is an optional, separate measurement.
+  const isConsolidatedSteelTicket = (order: ReceiptPurchaseOrder, wg?: { items?: Array<{ purchase_order_item_id: number }> } | null) =>
+    Boolean(wg?.items?.length) &&
+    (wg?.items || []).every((wgItem) =>
+      (order.items || []).some((item) => item.id === wgItem.purchase_order_item_id && item.is_consolidated_steel)
+    );
+
   const handleScaleWeightChange = (order: ReceiptPurchaseOrder, totalWeightStr: string) => {
     setScaleTicketWeights((prev) => ({ ...prev, [order.id]: totalWeightStr }));
   };
@@ -382,7 +390,21 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
     const activeWg = order.weighing_groups?.find((wg) => wg.status === 'PENDING_RECEIPT');
     let scaleWeightVal: number | undefined;
 
-    if (activeWg) {
+    const consolidatedTicket = isConsolidatedSteelTicket(order, activeWg);
+
+    if (activeWg && consolidatedTicket) {
+      const rawScaleVal = (scaleTicketWeights[order.id] ?? '').trim();
+      if (rawScaleVal !== '') {
+        const scaleWeight = parseFloat(rawScaleVal);
+        if (isNaN(scaleWeight) || scaleWeight <= 0) {
+          setError('وزن كارتة البسكول يجب أن يكون رقماً أكبر من صفر أو يُترك فارغاً.');
+          return;
+        }
+        scaleWeightVal = scaleWeight;
+      }
+    }
+
+    if (activeWg && !consolidatedTicket) {
       const rawScaleVal = scaleTicketWeights[order.id];
       const scaleWeight = parseFloat(rawScaleVal !== undefined && rawScaleVal.trim() !== '' ? rawScaleVal : String(activeWg.total_ordered_weight));
       if (isNaN(scaleWeight) || scaleWeight <= 0) {
@@ -807,6 +829,42 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
                         const activeWeighingGroup = order.weighing_groups?.find((wg) => wg.status === 'PENDING_RECEIPT');
                         if (!activeWeighingGroup) return null;
 
+                        if (isConsolidatedSteelTicket(order, activeWeighingGroup)) {
+                          return (
+                            <div className="rounded-3xl border-2 border-indigo-500/80 bg-gradient-to-br from-indigo-950/70 via-slate-950 to-slate-900 p-4 sm:p-5 shadow-2xl space-y-3" data-testid="steel-ticket-card">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <h4 className="text-base sm:text-lg font-black text-white">
+                                  ⚖️ كارتة ميزان الحديد — {activeWeighingGroup.group_number}
+                                </h4>
+                                <span className="px-3 py-1 rounded-xl text-xs font-black bg-slate-900/90 text-indigo-300 border border-indigo-500/40 font-mono">
+                                  المطلوب: {activeWeighingGroup.total_ordered_weight} طن
+                                </span>
+                              </div>
+                              <p className="text-xs text-indigo-200/80">
+                                اكتب كمية الحديد المستلمة في بند «حديد» بالأسفل مرة واحدة. وزن الكارتة يُسجَّل للمرجعية فقط ولا يغيّر الكمية المستلمة.
+                              </p>
+                              <label className="block space-y-1.5">
+                                <span className="text-xs sm:text-sm font-black text-indigo-200">الوزن الصافي من كارتة البسكول (اختياري):</span>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    step="0.001"
+                                    min="0"
+                                    placeholder="مثال: 70.800"
+                                    aria-label="الوزن الصافي من كارتة البسكول"
+                                    value={scaleTicketWeights[order.id] ?? ''}
+                                    onChange={(e) => handleScaleWeightChange(order, e.target.value)}
+                                    className="w-full h-12 rounded-xl border-2 border-indigo-400 bg-slate-900/90 px-3 text-lg font-black text-indigo-100 placeholder:text-slate-500 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                                  />
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-indigo-300 bg-indigo-950/80 px-2 py-0.5 rounded-md pointer-events-none">
+                                    طن
+                                  </span>
+                                </div>
+                              </label>
+                            </div>
+                          );
+                        }
+
                         const enteredWeight = parseFloat(
                           scaleTicketWeights[order.id] !== undefined
                             ? scaleTicketWeights[order.id]
@@ -927,7 +985,7 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
 
                       {/* 2. Items List: Ultra Simple Big Visual Cards (Hidden if order has an active Weighing Group) */}
                       <div className="space-y-4">
-                        {!order.weighing_groups?.some((wg) => wg.status === 'PENDING_RECEIPT') && (
+                        {!order.weighing_groups?.some((wg) => wg.status === 'PENDING_RECEIPT' && !isConsolidatedSteelTicket(order, wg)) && (
                           <>
                             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                               <h4 className="text-sm sm:text-base font-black text-slate-100 flex items-center gap-2">

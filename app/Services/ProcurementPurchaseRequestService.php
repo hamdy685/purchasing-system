@@ -519,21 +519,33 @@ class ProcurementPurchaseRequestService
                 'notes' => $data['notes'] ?? null,
             ]);
 
-            foreach ($data['items'] as $item) {
+            $lines = array_map(fn ($item) => array_merge($item, [
+                'supplier_id' => $item['supplier_id'] ?? $data['supplier_id'] ?? null,
+                'uom' => $item['uom'] ?? 'PCS',
+            ]), array_values($data['items']));
+
+            // Several rebar diameters become one financial "حديد" line; diameters stay as reference components.
+            foreach (app(SteelConsolidationService::class)->consolidate($lines) as $entry) {
+                $item = $entry['item'];
                 $quantity = (float) $item['quantity'];
                 $unitPrice = (float) $item['unit_price'];
-                $pr->items()->create([
+                $prItem = $pr->items()->create([
                     'item_id' => $item['item_id'] ?? null,
-                    'supplier_id' => $item['supplier_id'] ?? $data['supplier_id'] ?? null,
+                    'supplier_id' => $item['supplier_id'],
                     'item_description' => $item['item_description'],
                     'item_reference' => $item['item_reference'],
                     'region' => $item['region'],
                     'quantity' => $quantity,
-                    'uom' => $item['uom'] ?? 'PCS',
+                    'uom' => $item['uom'],
                     'estimated_unit_price' => $unitPrice,
-                    'estimated_line_total' => round($quantity * $unitPrice, 2),
+                    'estimated_line_total' => $item['line_total'] ?? round($quantity * $unitPrice, 2),
                     'specifications' => $item['specifications'] ?? null,
+                    'is_consolidated_steel' => $entry['type'] === 'steel',
                 ]);
+
+                foreach ($entry['components'] ?? [] as $component) {
+                    $prItem->steelComponents()->create($component);
+                }
             }
 
             ApprovalHistory::create([

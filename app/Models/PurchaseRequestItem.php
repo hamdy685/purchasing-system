@@ -75,12 +75,14 @@ class PurchaseRequestItem extends Model
         'supplement_batch',
         'specifications',
         'notes',
+        'is_consolidated_steel',
     ];
 
     protected function casts(): array
     {
         return [
             'is_supplementary' => 'boolean',
+            'is_consolidated_steel' => 'boolean',
             'supplement_batch' => 'integer',
             'quantity' => 'decimal:4',
             'estimated_unit_price' => 'decimal:4',
@@ -116,6 +118,11 @@ class PurchaseRequestItem extends Model
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class, 'supplier_id');
+    }
+
+    public function steelComponents(): HasMany
+    {
+        return $this->hasMany(SteelItemComponent::class, 'purchase_request_item_id')->orderBy('sort_order');
     }
 
     public function purchaseOrderItems(): HasMany

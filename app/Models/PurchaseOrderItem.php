@@ -32,6 +32,7 @@ class PurchaseOrderItem extends Model
         'specifications',
         'supplier_id',
         'shipment_group_id',
+        'is_consolidated_steel',
     ];
 
     protected function casts(): array
@@ -39,6 +40,7 @@ class PurchaseOrderItem extends Model
         return [
             'is_discount_applied' => 'boolean',
             'is_supplementary' => 'boolean',
+            'is_consolidated_steel' => 'boolean',
             'supplement_batch' => 'integer',
             'quantity' => 'decimal:4',
             'unit_price' => 'decimal:4',
@@ -126,6 +128,11 @@ class PurchaseOrderItem extends Model
     public function weighingGroupItem(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
         return $this->hasOne(WeighingGroupItem::class, 'purchase_order_item_id');
+    }
+
+    public function steelComponents(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(SteelItemComponent::class, 'purchase_order_item_id')->orderBy('sort_order');
     }
 
     public function shipmentGroup(): BelongsTo

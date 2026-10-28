@@ -97,30 +97,16 @@ class SteelWeighingGroupController extends Controller
     }
 
     /**
-     * Record site receiving for a weighing group.
+     * Retired: site receiving for a weighing group (see method body).
      */
-    public function receive(Request $request, int $id): JsonResponse
+    public function receive(int $id): JsonResponse
     {
-        $validated = $request->validate([
-            'received_total_weight' => 'required|numeric|min:0.001',
-            'scale_ticket_photo'    => 'nullable|string',
-            'item_distributions'    => 'nullable|array',
-            'notes'                 => 'nullable|string|max:1000',
-        ]);
-
-        $receipt = $this->weighingService->recordReceiving(
-            $request->user(),
-            $id,
-            (float) $validated['received_total_weight'],
-            $validated['scale_ticket_photo'] ?? null,
-            $validated['item_distributions'] ?? [],
-            $validated['notes'] ?? null
-        );
-
+        // Retired shortcut: it approved the receipt without site-engineer inspection and recorded the
+        // ordered weights instead of the entered quantity. Steel is received through the warehouse
+        // receipt (POST /purchase-receipts/purchase-orders/{po}) like every other material.
         return response()->json([
-            'message' => 'تم تسجيل استلام وزنة البسكول بنجاح وإصدار إذن استلام رسمي.',
-            'data'    => $receipt,
-        ]);
+            'message' => 'تم إيقاف هذا المسار. يتم استلام وزنة الحديد من خلال إذن الاستلام بالمخزن ثم فحص واعتماد مهندس الموقع.',
+        ], 410);
     }
 
     /**

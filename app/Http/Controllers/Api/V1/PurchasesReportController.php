@@ -309,6 +309,18 @@ class PurchasesReportController extends Controller
                 $wgUnitPrice = (float) ($wg->unit_price ?: ($wg->items->first()?->unit_price ?? 0));
                 $wgOrderedQty = (float) $wg->total_ordered_weight;
                 $wgReceivedQty = $wg->total_received_weight !== null ? (float) $wg->total_received_weight : null;
+
+                // Consolidated "حديد": the received quantity is what the receiver entered on the receipt line,
+                // independent of the scale net weight (which may be missing, lower or higher).
+                $wgPoItemIds = $wg->items->pluck('purchase_order_item_id');
+                $wgIsConsolidated = $wgPoItemIds->isNotEmpty() && $order->items
+                    ->whereIn('id', $wgPoItemIds)
+                    ->every(fn ($poItem) => (bool) $poItem->is_consolidated_steel);
+                $wgReceipt = $approvedReceipt ?? $targetReceipt;
+                if ($wgIsConsolidated && $wgReceipt) {
+                    $wgLines = $wgReceipt->items->whereIn('purchase_order_item_id', $wgPoItemIds);
+                    $wgReceivedQty = $wgLines->isNotEmpty() ? (float) $wgLines->sum('received_quantity') : null;
+                }
                 $effectiveQty = $wgReceivedQty !== null ? $wgReceivedQty : $wgOrderedQty;
                 $wgLineTotal = round($effectiveQty * $wgUnitPrice, 2);
 

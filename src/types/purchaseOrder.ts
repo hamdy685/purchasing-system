@@ -85,6 +85,7 @@ export interface PurchaseOrderItem {
     region?: string | null;
   } | null;
   is_supplementary?: boolean;
+  is_consolidated_steel?: boolean;
   supplement_batch?: number | null;
   shipment_group_id?: number | null;
   shipment_group?: {

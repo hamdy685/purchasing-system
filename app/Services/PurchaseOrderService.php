@@ -362,7 +362,9 @@ class PurchaseOrderService
                         'specifications'  => $specs,
                         'supplier_id'     => $itemSupplierId,
                         'is_supplementary'=> $isItemSupplementary,
+                        'is_consolidated_steel' => (bool) ($prItem?->is_consolidated_steel),
                     ]);
+                    app(SteelConsolidationService::class)->copyComponentsToPoItem($prItem, $poItem);
 
                     if ($prItem && (float) $prItem->quantity !== $qty && $uom !== 'TON') {
                         AuditLog::create([
@@ -397,7 +399,7 @@ class PurchaseOrderService
                         ? (float) ($prItem->estimated_unit_price ?? 0.00)
                         : (float) ($selectedQuote?->unit_price ?? 0.00);
 
-                    $po->items()->create([
+                    $poItem = $po->items()->create([
                         'pr_item_id'      => $prItem->id,
                         'item_id'         => $prItem->item_id,
                         'item_description'=> $prItem->item_description,
@@ -410,7 +412,9 @@ class PurchaseOrderService
                         'specifications'  => $specs,
                         'supplier_id'     => $prItem->supplier_id ?? $supplier?->id,
                         'is_supplementary'=> $pr->isComplementaryRequest() || (bool)($prItem?->is_supplementary),
+                        'is_consolidated_steel' => (bool) $prItem->is_consolidated_steel,
                     ]);
+                    app(SteelConsolidationService::class)->copyComponentsToPoItem($prItem, $poItem);
                 }
             }
 
@@ -1035,7 +1039,9 @@ class PurchaseOrderService
                 }
             }
 
-            // Synchronize approved receipt items so that receipt matches the finalized Actual PO definitively
+            // Link approved receipts to the finalized Actual PO. Quantities the receiver actually recorded are
+            // never overwritten here (over/under receipt must stay visible); only lines for items that had no
+            // receipt line yet (e.g. added by procurement) are created from the Actual PO quantity.
             $approvedReceipts = $lockedPo->receipts()->where('status', 'APPROVED')->get();
             if ($approvedReceipts->isNotEmpty()) {
                 $poItems = $lockedPo->items()->get();
@@ -1048,12 +1054,8 @@ class PurchaseOrderService
                     $receipt->items()->whereNotIn('purchase_order_item_id', $poItemIds)->delete();
 
                     foreach ($poItems as $poItem) {
-                        $receiptItem = $receipt->items()->where('purchase_order_item_id', $poItem->id)->first();
-                        if ($receiptItem) {
-                            $receiptItem->update([
-                                'received_quantity' => $poItem->quantity,
-                            ]);
-                        } else {
+                        $hasReceiptItem = $receipt->items()->where('purchase_order_item_id', $poItem->id)->exists();
+                        if (! $hasReceiptItem) {
                             $receipt->items()->create([
                                 'purchase_order_item_id' => $poItem->id,
                                 'ordered_quantity' => $poItem->quantity,

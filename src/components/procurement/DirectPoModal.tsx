@@ -41,6 +41,39 @@ const emptyItem = (): ItemRow => ({
   specifications: '',
 });
 
+// Line as sent to the API: rebar bars/parcels are converted to tons (unit price kept as entered).
+const toSubmittedItem = (item: ItemRow) => {
+  const qty = Number(item.quantity);
+  const uomUpper = (item.uom || '').trim().toUpperCase();
+  const isRebar = isRebarUnit(item.uom) || uomUpper === 'PARCEL' || (item.uom || '').includes('طرد');
+  let finalQty = qty;
+  let finalUom = item.uom;
+  let finalSpec = item.specifications.trim();
+
+  if (isRebar && finalUom !== 'TON' && finalUom !== 'طن') {
+    const tons = calculateRebarTons(qty, item.uom);
+    if (tons > 0) {
+      finalQty = tons;
+      finalUom = 'TON';
+      const extra = (uomUpper === 'PARCEL' || (item.uom || '').includes('طرد'))
+        ? `(ما يعادل ${formatCleanQty(qty)} طرد حديد - زنة الطرد 1.940 طن)`
+        : `(ما يعادل ${formatCleanQty(qty)} سيخ حديد ${getUnitLabel(item.uom)})`;
+      finalSpec = finalSpec ? `${finalSpec} - ${extra}` : extra;
+    }
+  }
+
+  return {
+    item_id: item.item_id || null,
+    item_description: item.item_description.trim(),
+    item_reference: item.item_reference.trim() || '',
+    region: item.region.trim() || '',
+    quantity: finalQty,
+    uom: finalUom,
+    unit_price: Number(item.unit_price),
+    specifications: finalSpec || undefined,
+  };
+};
+
 export const DirectPoModal: React.FC<DirectPoModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [departments, setDepartments] = useState<ProcurementDepartmentOption[]>([]);
@@ -59,13 +92,9 @@ export const DirectPoModal: React.FC<DirectPoModalProps> = ({ isOpen, onClose, o
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
-  const [unbundledSteelItems, setUnbundledSteelItems] = useState<ItemRow[] | null>(null);
-  const [steelBundleMessage, setSteelBundleMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
-      setUnbundledSteelItems(null);
-      setSteelBundleMessage(null);
       return;
     }
     Promise.all([
@@ -184,111 +213,36 @@ export const DirectPoModal: React.FC<DirectPoModalProps> = ({ isOpen, onClose, o
     );
   };
 
-  const hasMultipleSteelItems = useMemo(() => {
-    return items.filter(isSteel).length >= 2;
-  }, [items]);
-
-  const handleBundleSteel = () => {
-    setError(null);
-    setSteelBundleMessage(null);
-
-    const steelItems = items.filter(isSteel);
-    const nonSteelItems = items.filter(it => !isSteel(it));
-
-    if (steelItems.length < 2) {
-      setError('يجب إدخال بندين على الأقل من حديد التسليح لتجميع وزنتهم في بند استلام ومحاسبة موحد.');
-      return;
-    }
-
-    const invalidSteel = steelItems.some(
-      it => !it.item_description.trim() || Number(it.quantity) <= 0 || Number(it.unit_price) <= 0
-    );
-    if (invalidSteel) {
-      setError('يرجى التأكد من كتابة اسم الصنف وتحديد الكمية وسعر الوحدة لجميع بنود الحديد قبل تجميع الوزنة.');
-      return;
-    }
-
-    // Calculate weights in tons
-    let totalTons = 0;
-    let totalAmount = 0;
-    const breakdownList: string[] = [];
-
-    steelItems.forEach(it => {
-      const qty = Number(it.quantity) || 0;
-      const price = Number(it.unit_price) || 0;
-      const uomUpper = (it.uom || '').trim().toUpperCase();
-      let tons = 0;
-
-      if (isRebarUnit(it.uom)) {
-        tons = calculateRebarTons(qty, it.uom);
-      } else if (uomUpper === 'PARCEL' || (it.uom || '').includes('طرد')) {
-        tons = qty * 1.940;
-      } else if (uomUpper === 'TON' || (it.uom || '').includes('طن')) {
-        tons = qty;
-      } else if (uomUpper === 'KG' || (it.uom || '').includes('كجم') || (it.uom || '').includes('كيلو')) {
-        tons = qty / 1000;
-      } else {
-        tons = qty;
-      }
-
-      totalTons += tons;
-      const lineVal = qty * price;
-      totalAmount += lineVal;
-
-      const originalUnitLabel = getUnitLabel(it.uom);
-      breakdownList.push(
-        `${it.item_description.trim()} (${formatCleanQty(qty)} ${originalUnitLabel}${tons !== qty ? ` ≈ ${formatCleanQty(tons)} طن` : ''})`
-      );
+  // Mirrors the backend (SteelConsolidationService): two or more rebar lines on the same plot and region
+  // are saved as ONE purchase line named "حديد". This is only a preview; the server decides.
+  const steelConsolidationPreview = useMemo(() => {
+    const groups = new Map<string, { count: number; tons: number; amount: number }>();
+    items.forEach((item) => {
+      const line = toSubmittedItem(item);
+      const isTonUnit = line.uom === 'TON' || line.uom === 'طن';
+      if (!isSteel(item) || !isTonUnit || line.quantity <= 0) return;
+      const key = `${line.item_reference}|${line.region}`;
+      const group = groups.get(key) || { count: 0, tons: 0, amount: 0 };
+      group.count += 1;
+      group.tons += line.quantity;
+      group.amount += line.quantity * line.unit_price;
+      groups.set(key, group);
     });
-
-    if (totalTons <= 0) {
-      setError('تعذر احتساب إجمالي وزن الحديد بالطن. يرجى مراجعة الكميات والوحدات.');
-      return;
-    }
-
-    const uniformPrice = Math.round((totalAmount / totalTons) * 100) / 100;
-    const commonRef = steelItems.find(it => it.item_reference.trim())?.item_reference || items[0]?.item_reference || '';
-    const commonReg = steelItems.find(it => it.region.trim())?.region || items[0]?.region || '';
-
-    const bundledItem: ItemRow = {
-      item_id: null,
-      item_description: 'وزنة حديد تسليح مجمعة (ميزان بسكول)',
-      item_reference: commonRef,
-      region: commonReg,
-      quantity: Number(totalTons.toFixed(3)),
-      uom: 'TON',
-      unit_price: uniformPrice,
-      specifications: `وزنة حديد مجمعة لميزان البسكول (إجمالي ${formatCleanQty(totalTons)} طن) — تشمل تفصيلياً: [${breakdownList.join(' + ')}]`,
-    };
-
-    setUnbundledSteelItems([...items]);
-    setItems([...nonSteelItems, bundledItem]);
-    setSteelBundleMessage(
-      `✅ تم بنجاح تجميع (${steelItems.length}) بنود حديد تسليح في وزنة واحدة بإجمالي (${formatCleanQty(totalTons)} طن) بسعر موحد (${formatCleanNumber(uniformPrice, 2)} ج.م/طن). ستصل للمخزن والمستلم والمشتريات والحسابات كبند واحد مع الحفاظ على تفاصيل الأقطار في المواصفات.`
-    );
-  };
-
-  const handleUnbundleSteel = () => {
-    if (unbundledSteelItems) {
-      setItems(unbundledSteelItems);
-      setUnbundledSteelItems(null);
-      setSteelBundleMessage('تم فك تجميع الوزنة وإعادة بنود الحديد كأصناف منفصلة.');
-    }
-  };
+    return Array.from(groups.values()).filter((group) => group.count >= 2);
+  }, [items]);
 
   if (!isOpen) return null;
 
   const confirmationAlerts = useMemo(() => {
     const alerts: ConfirmationAlert[] = [];
-    const isBundled = items.some(it => it.item_description.includes('وزنة حديد') || it.specifications.includes('وزنة حديد مجمعة'));
     const rebarItems = items.filter(isSteel);
 
-    if (isBundled) {
+    if (steelConsolidationPreview.length > 0) {
       alerts.push({
         type: 'rebar',
-        title: '🏗️ تنبيه وزنة حديد مجمعة موحدة (بند واحد للاستلام والمشتريات والحسابات)',
-        message: 'تم تجميع بنود الحديد في وزنة واحدة كبند موحد لميزان البسكول، وستسجل لدى مهندس الموقع والمخزن وتعود للمشتريات وتُقيد في الحسابات كبند واحد مطابق لكارتة القبان.',
-        badge: 'وزنة حديد موحدة',
+        title: '🏗️ تجميع بنود الحديد في بند واحد (حديد)',
+        message: 'سيتم حفظ أقطار الحديد كبند واحد باسم "حديد" (الكمية بالطن والقيمة = مجموع قيم الأقطار) في أمر الشراء والاستلام والحسابات، مع الاحتفاظ بتفاصيل الأقطار للمرجعية فقط.',
+        badge: 'حديد موحد',
       });
     } else if (rebarItems.length > 0) {
       alerts.push({
@@ -300,7 +254,7 @@ export const DirectPoModal: React.FC<DirectPoModalProps> = ({ isOpen, onClose, o
     }
 
     return alerts;
-  }, [items]);
+  }, [items, steelConsolidationPreview]);
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -330,37 +284,7 @@ export const DirectPoModal: React.FC<DirectPoModalProps> = ({ isOpen, onClose, o
         site_engineer_user_id: Number(siteEngineerId),
         requires_warehouse_receipt: requiresWarehouseReceipt,
         delivery_date: deliveryDate || undefined,
-        items: items.map(item => {
-          const qty = Number(item.quantity);
-          const uomUpper = (item.uom || '').trim().toUpperCase();
-          const isRebar = isRebarUnit(item.uom) || uomUpper === 'PARCEL' || (item.uom || '').includes('طرد');
-          let finalQty = qty;
-          let finalUom = item.uom;
-          let finalSpec = item.specifications.trim();
-
-          if (isRebar && finalUom !== 'TON' && finalUom !== 'طن') {
-            const tons = calculateRebarTons(qty, item.uom);
-            if (tons > 0) {
-              finalQty = tons;
-              finalUom = 'TON';
-              const extra = (uomUpper === 'PARCEL' || (item.uom || '').includes('طرد'))
-                ? `(ما يعادل ${formatCleanQty(qty)} طرد حديد - زنة الطرد 1.940 طن)`
-                : `(ما يعادل ${formatCleanQty(qty)} سيخ حديد ${getUnitLabel(item.uom)})`;
-              finalSpec = finalSpec ? `${finalSpec} - ${extra}` : extra;
-            }
-          }
-
-          return {
-            item_id: item.item_id || null,
-            item_description: item.item_description.trim(),
-            item_reference: item.item_reference.trim() || '',
-            region: item.region.trim() || '',
-            quantity: finalQty,
-            uom: finalUom,
-            unit_price: Number(item.unit_price),
-            specifications: finalSpec || undefined,
-          };
-        }),
+        items: items.map(toSubmittedItem),
       });
       onSuccess(result.id);
       onClose();
@@ -482,40 +406,13 @@ export const DirectPoModal: React.FC<DirectPoModalProps> = ({ isOpen, onClose, o
               <div>
                 <h3 className="text-sm font-black text-slate-200 flex items-center gap-2">
                   <span>أصناف وتفاصيل طلب الشراء المباشر</span>
-                  {unbundledSteelItems && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/50">
-                      ⚖️ وزنة حديد مجمعة نشطة
-                    </span>
-                  )}
                 </h3>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  أدخل الأصناف، ويمكنك تجميع كافة بنود الحديد في وزنة واحدة لتستلم وتُحاسب كبند واحد
+                  أدخل الأصناف بأقطارها؛ بنود حديد التسليح لنفس قطعة الأرض والمنطقة تُجمع تلقائياً في بند واحد (حديد)
                 </p>
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
-                {unbundledSteelItems ? (
-                  <button
-                    type="button"
-                    onClick={handleUnbundleSteel}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/80 bg-amber-950/70 hover:bg-amber-900/90 px-3.5 py-2 text-xs font-bold text-amber-200 transition-all shadow-md shadow-amber-950/40 cursor-pointer"
-                    title="فك تجميع الوزنة واستعادة بنود الحديد الفردية بأقطارها المنفصلة"
-                  >
-                    <span>↩️</span>
-                    <span>فك تجميع الوزنة (استعادة الأصناف)</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleBundleSteel}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/80 bg-gradient-to-r from-amber-600 via-amber-500 to-amber-600 hover:from-amber-500 hover:to-amber-400 px-4 py-2 text-xs font-black text-slate-950 transition-all shadow-lg shadow-amber-950/50 hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
-                    title="تجميع كافة بنود حديد التسليح في وزنة واحدة إجمالية لميزان البسكول (تستلم وتسجل كبند واحد للمخزن والمشتريات والحسابات)"
-                  >
-                    <span>⚖️</span>
-                    <span>تجميع الوزنة (لبنود الحديد)</span>
-                  </button>
-                )}
-
                 <button
                   type="button"
                   onClick={addItem}
@@ -526,21 +423,17 @@ export const DirectPoModal: React.FC<DirectPoModalProps> = ({ isOpen, onClose, o
               </div>
             </div>
 
-            {/* Glowing notification message banner for bundle */}
-            {steelBundleMessage && (
-              <div className="mb-3 rounded-2xl border border-amber-500/50 bg-gradient-to-r from-amber-950/70 via-slate-900 to-amber-950/40 p-3 text-xs font-bold text-amber-200 flex items-center justify-between gap-2 shadow-lg animate-fade-in">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-xl shrink-0">⚖️</span>
-                  <span className="leading-relaxed">{steelBundleMessage}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSteelBundleMessage(null)}
-                  className="text-slate-400 hover:text-white text-base px-2 cursor-pointer shrink-0"
-                  title="إخفاء التنبيه"
-                >
-                  ×
-                </button>
+            {steelConsolidationPreview.length > 0 && (
+              <div className="mb-3 rounded-2xl border border-amber-500/50 bg-gradient-to-r from-amber-950/70 via-slate-900 to-amber-950/40 p-3 text-xs font-bold text-amber-200 flex items-center gap-2.5 shadow-lg" data-testid="steel-consolidation-preview">
+                <span className="text-xl shrink-0">⚖️</span>
+                <span className="leading-relaxed">
+                  {steelConsolidationPreview.map((group, index) => (
+                    <span key={index} className="block">
+                      سيتم حفظ ({group.count}) بنود حديد كبند واحد «حديد»: {formatCleanQty(group.tons)} طن بقيمة {formatCleanNumber(group.amount, 2)} ج.م
+                      (سعر الطن المرجّح {formatCleanNumber(group.tons > 0 ? group.amount / group.tons : 0, 2)} ج.م)
+                    </span>
+                  ))}
+                </span>
               </div>
             )}
 
@@ -578,7 +471,7 @@ export const DirectPoModal: React.FC<DirectPoModalProps> = ({ isOpen, onClose, o
                           </span>
                         )}
                       </td>
-                      <td className="border-t border-slate-700 px-2 py-2"><select required value={item.uom} onChange={event => updateItem(index, 'uom', event.target.value)} className="h-9 w-24 rounded border border-slate-600 bg-[#0b1424] px-2 text-xs text-slate-100 outline-none focus:border-cyan-400">{UNIT_OPTIONS.map(unit => <option key={unit.value} value={unit.value}>{unit.label}</option>)}</select></td>
+                      <td className="border-t border-slate-700 px-2 py-2"><select required aria-label="وحدة البند" value={item.uom} onChange={event => updateItem(index, 'uom', event.target.value)} className="h-9 w-24 rounded border border-slate-600 bg-[#0b1424] px-2 text-xs text-slate-100 outline-none focus:border-cyan-400">{UNIT_OPTIONS.map(unit => <option key={unit.value} value={unit.value}>{unit.label}</option>)}</select></td>
                       <td className="border-t border-slate-700 px-2 py-2"><input required type="number" min="0" step="any" aria-label="كمية البند" value={item.quantity ?? ''} onFocus={e => e.target.select()} onChange={event => updateItem(index, 'quantity', event.target.value === '' ? '' : Number(event.target.value))} className="h-9 w-20 rounded border border-slate-600 bg-[#0b1424] px-2 text-center font-mono text-xs text-slate-100 outline-none focus:border-cyan-400" /></td>
                       <td className="border-t border-slate-700 px-2 py-2"><input required type="number" min="0" step="any" aria-label="سعر الوحدة" value={item.unit_price ?? ''} onFocus={e => e.target.select()} onChange={event => updateItem(index, 'unit_price', event.target.value === '' ? '' : Number(event.target.value))} className="h-9 w-24 rounded border border-slate-600 bg-[#0b1424] px-2 text-center font-mono text-xs text-slate-100 outline-none focus:border-cyan-400" /></td>
                       <td className="border-t border-slate-700 px-2 py-2 text-center font-mono font-black text-emerald-300">{formatCleanNumber((Number(item.quantity) || 0) * (Number(item.unit_price) || 0))} ج.م</td>

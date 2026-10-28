@@ -45,6 +45,8 @@ class PurchaseOrderItemResource extends JsonResource
             'discount_amount'     => number_format((float) ($this->discount_amount ?? 0), 2, '.', ''),
             'specifications'      => $this->specifications,
             'is_supplementary' => (bool) $this->is_supplementary,
+            'is_consolidated_steel' => (bool) $this->is_consolidated_steel,
+            'steel_components' => $this->whenLoaded('steelComponents'),
             'supplement_batch' => $this->supplement_batch ? (int) $this->supplement_batch : null,
             'supplier_id'      => $this->supplier_id,
             'supplier'         => $this->relationLoaded('supplier') && $this->supplier ? [

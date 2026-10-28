@@ -406,13 +406,32 @@ class PurchaseReceiptService
                     }
                 }
 
-                $finalTotalWeight = ($scaleTicketWeight !== null && $scaleTicketWeight > 0)
-                    ? (float) $scaleTicketWeight
-                    : round($totalReceivedWeight, 3);
-
-                $diff = round($finalTotalWeight - (float) $weighingGroup->total_ordered_weight, 3);
                 $unitPrice = (float) ($weighingGroup->unit_price ?: ($weighingGroup->items->first()?->unit_price ?? 0));
-                $receivedTotalAmount = round($finalTotalWeight * $unitPrice, 2);
+                $isConsolidatedSteel = $weighingGroup->items->isNotEmpty() && $weighingGroup->items->every(
+                    fn ($wgItem) => (bool) $orderItems->get($wgItem->purchase_order_item_id)?->is_consolidated_steel
+                );
+
+                if ($isConsolidatedSteel) {
+                    // The scale net weight is an independent measurement: recorded only when entered and
+                    // never used in place of the quantity the receiver entered for the "حديد" line.
+                    if ($wgItemMap->keys()->diff(collect($items)->pluck('purchase_order_item_id')->map(fn ($id) => (int) $id))->isNotEmpty()) {
+                        throw ValidationException::withMessages(['items' => ['يجب إدخال كمية الحديد المستلمة فعلياً.']]);
+                    }
+                    $finalTotalWeight = ($scaleTicketWeight !== null && $scaleTicketWeight > 0) ? (float) $scaleTicketWeight : null;
+                    $diff = $finalTotalWeight !== null ? round($finalTotalWeight - (float) $weighingGroup->total_ordered_weight, 3) : null;
+                    // Value at the PO line's own ton price (the group's price column keeps only 2 decimals).
+                    $receivedTotalAmount = round($weighingGroup->items->sum(
+                        fn ($wgItem) => (float) $wgItem->received_weight * (float) $orderItems->get($wgItem->purchase_order_item_id)?->unit_price
+                    ), 2);
+                } else {
+                    // Legacy multi-diameter groups keep their original scale-weight semantics.
+                    $finalTotalWeight = ($scaleTicketWeight !== null && $scaleTicketWeight > 0)
+                        ? (float) $scaleTicketWeight
+                        : round($totalReceivedWeight, 3);
+
+                    $diff = round($finalTotalWeight - (float) $weighingGroup->total_ordered_weight, 3);
+                    $receivedTotalAmount = round($finalTotalWeight * $unitPrice, 2);
+                }
 
                 $weighingGroup->update([
                     'status' => 'RECEIVED',
@@ -438,6 +457,7 @@ class PurchaseReceiptService
                         'receipt_number'        => $receipt->receipt_number,
                         'total_ordered_weight'  => (float) $weighingGroup->total_ordered_weight,
                         'total_received_weight' => $finalTotalWeight,
+                        'received_quantity'     => round($totalReceivedWeight, 4),
                         'weight_difference'     => $diff,
                     ], JSON_UNESCAPED_UNICODE),
                 ]);

@@ -14,6 +14,7 @@ export interface ReceiptOrderItem {
   specifications?: string | null;
   notes?: string | null;
   shipment_group_id?: number | null;
+  is_consolidated_steel?: boolean;
   shipment_group?: ShipmentGroup | null;
   item?: { id: number; name: string; sku?: string; category?: { name: string } } | null;
   pr_item?: {

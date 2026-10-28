@@ -18,7 +18,7 @@ class SteelWeighingGroupService
     /**
      * Non-steel keywords that must strictly be rejected from steel weighing groups.
      */
-    private const EXCLUDED_KEYWORDS = [
+    public const EXCLUDED_KEYWORDS = [
         'رمل',
         'سن',
         'زلط',
@@ -84,6 +84,11 @@ class SteelWeighingGroupService
      */
     public function extractSizeOrDiameter(PurchaseOrderItem $item): string
     {
+        // A consolidated "حديد" line spans several diameters; they live in steel_item_components.
+        if ($item->is_consolidated_steel) {
+            return 'أقطار مجمعة';
+        }
+
         $desc = (string) ($item->item_description ?? '');
         $spec = (string) ($item->specifications ?? '');
         $combined = "{$desc} {$spec}";
@@ -370,7 +375,10 @@ class SteelWeighingGroupService
                 'total_ordered_weight' => round($totalOrderedWeight, 3),
                 'uom'                  => 'TON',
                 'unit_price'           => $unifiedUnitPrice,
-                'total_amount'         => round($totalOrderedWeight * $unifiedUnitPrice, 2),
+                // A consolidated "حديد" line carries a 4-decimal weighted price: keep its exact line value.
+                'total_amount'         => $selectedItems->every(fn ($it) => (bool) $it->is_consolidated_steel)
+                    ? round((float) $selectedItems->sum('line_total'), 2)
+                    : round($totalOrderedWeight * $unifiedUnitPrice, 2),
                 'notes'                => $notes,
                 'created_by_user_id'   => $user->id,
             ]);
