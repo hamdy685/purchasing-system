@@ -67,7 +67,7 @@ class SteelWeighingGroupProtectionTest extends TestCase
             'department_id' => $this->dept->id,
             'supplier_id' => $this->supplier->id,
             'created_by_user_id' => $this->procurementManager->id,
-            'status' => 'APPROVED',
+            'status' => 'ISSUED', // receivable PO state (weighing receive now enforces the delivery gate)
             'total_amount' => 500000,
             'grand_total' => 500000,
             'is_actual' => true,

@@ -61,19 +61,22 @@ class ShipmentGroup extends Model
             return 'PENDING_DELIVERY';
         }
 
-        $totalOrdered = $items->sum('quantity');
-        $totalReceived = 0.0;
+        // Items carry different units (bags, meters, pieces...), so completion is judged per item:
+        // a surplus on one line must never cover a shortage on another.
+        $allItemsComplete = true;
         $hasAnyReceived = false;
 
         foreach ($items as $item) {
             $receivedForItem = (float) ($item->received_quantity ?? 0);
-            $totalReceived += $receivedForItem;
             if ($receivedForItem > 0) {
                 $hasAnyReceived = true;
             }
+            if ($receivedForItem < (float) $item->quantity) {
+                $allItemsComplete = false;
+            }
         }
 
-        if ($totalReceived >= $totalOrdered && $totalOrdered > 0) {
+        if ($allItemsComplete && $hasAnyReceived) {
             return 'RECEIVED';
         }
 

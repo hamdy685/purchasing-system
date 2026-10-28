@@ -288,9 +288,20 @@ class PurchaseReceiptService
             throw ValidationException::withMessages(['items' => ['يجب تسجيل صنف واحد على الأقل في إذن الاستلام.']]);
         }
 
+        $submittedItemIds = array_map(fn ($item) => (int) ($item['purchase_order_item_id'] ?? 0), $items);
+        if (count($submittedItemIds) !== count(array_unique($submittedItemIds))) {
+            throw ValidationException::withMessages(['items' => ['لا يمكن تكرار نفس البند أكثر من مرة في إذن الاستلام.']]);
+        }
+
         $orderItems = $purchaseOrder->items->keyBy('id');
 
         return DB::transaction(function () use ($warehouseKeeper, $purchaseOrder, $items, $receivedAt, $notes, $siteEngineerId, $orderItems, $photoData, $actualReceiverName, $actualReceiverUserId, $weighingGroupId, $scaleTicketWeight): PurchaseReceipt {
+            // Serialize concurrent submissions for the same PO and re-check under the lock.
+            PurchaseOrder::whereKey($purchaseOrder->id)->lockForUpdate()->first();
+            if (PurchaseReceipt::where('purchase_order_id', $purchaseOrder->id)->whereIn('status', ['PENDING_SITE_ENGINEER', 'APPROVED'])->exists()) {
+                throw new \RuntimeException('تم إنشاء إذن استلام لهذا الأمر بالفعل.');
+            }
+
             $supplierId = $purchaseOrder->supplier_id ?: \App\Models\Supplier::getOrCreateInternalWarehouseSupplier()->id;
             if (! $purchaseOrder->supplier_id) {
                 $purchaseOrder->update(['supplier_id' => $supplierId]);
@@ -301,10 +312,19 @@ class PurchaseReceiptService
             if ($weighingGroupId) {
                 $weighingGroup = \App\Models\WeighingGroup::where('id', $weighingGroupId)
                     ->where('purchase_order_id', $purchaseOrder->id)
+                    ->lockForUpdate()
                     ->first();
+
+                // A cancelled or already-received ticket must never be (re)applied to a new receipt.
+                if ($weighingGroup && $weighingGroup->status !== 'PENDING_RECEIPT') {
+                    throw ValidationException::withMessages([
+                        'weighing_group_id' => ['مجموعة الوزنة المحددة ملغاة أو تم استلامها مسبقاً ولا يمكن ربطها بإذن استلام جديد.'],
+                    ]);
+                }
             } else {
                 $weighingGroup = \App\Models\WeighingGroup::where('purchase_order_id', $purchaseOrder->id)
                     ->where('status', 'PENDING_RECEIPT')
+                    ->lockForUpdate()
                     ->first();
             }
 

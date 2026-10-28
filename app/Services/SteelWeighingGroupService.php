@@ -444,7 +444,9 @@ class SteelWeighingGroupService
         }
 
         return DB::transaction(function () use ($user, $weighingGroupId, $receivedTotalWeight, $scaleTicketPhoto, $itemDistributions, $receiverNotes) {
-            $group = WeighingGroup::with(['items.purchaseOrderItem', 'purchaseOrder.purchaseRequest'])->findOrFail($weighingGroupId);
+            $group = WeighingGroup::with(['items.purchaseOrderItem', 'purchaseOrder.purchaseRequest'])
+                ->lockForUpdate()
+                ->findOrFail($weighingGroupId);
 
             if ($group->status === 'RECEIVED') {
                 throw ValidationException::withMessages([
@@ -455,6 +457,24 @@ class SteelWeighingGroupService
             if ($group->status === 'CANCELLED') {
                 throw ValidationException::withMessages([
                     'weighing_group' => ['مجموعة الوزنة هذه ملغاة ولا يمكن استلامها.'],
+                ]);
+            }
+
+            // Same delivery gate as the warehouse receipt: the PO must be issued/approved.
+            $receivableStatuses = ['ISSUED', 'PENDING_ACCOUNTING_REVIEW', 'APPROVED_BY_ACCOUNTING', 'FINAL_APPROVED'];
+            if (! in_array($group->purchaseOrder?->status, $receivableStatuses, true)) {
+                throw ValidationException::withMessages([
+                    'purchase_order' => ['لا يمكن تسجيل استلام الوزنة في حالة أمر الشراء الحالية.'],
+                ]);
+            }
+
+            // One receipt per PO: never add a second set of lines for items already received.
+            $hasActiveReceipt = PurchaseReceipt::where('purchase_order_id', $group->purchase_order_id)
+                ->whereIn('status', ['PENDING_SITE_ENGINEER', 'APPROVED'])
+                ->exists();
+            if ($hasActiveReceipt) {
+                throw ValidationException::withMessages([
+                    'weighing_group' => ['يوجد إذن استلام نشط لأمر الشراء هذا بالفعل؛ لا يمكن تسجيل استلام الوزنة مرة أخرى.'],
                 ]);
             }
 
