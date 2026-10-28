@@ -416,16 +416,17 @@ export const CreatePurchaseOrderPage: React.FC = () => {
       }
     }
 
-    // Check uniform unit price for steel items
+    // On issue, the server merges these lines into ONE PO line "حديد" (value = sum of the lines,
+    // weighted ton price), so different diameter prices are allowed. Plot/region must match.
     const selectedItems = indicesToGroup.map((idx) => poItems[idx]);
-    const prices = Array.from(new Set(selectedItems.map((it) => Number(it.unit_price) || 0)));
-    if (prices.length > 1) {
-      setError('لا يمكن تجميع بنود الحديد في وزنة واحدة لأن سعر الطن مختلف بين البنود. يجب أن يكون سعر الطن موحداً لكافة أقطار الوزنة.');
+    const plots = new Set(selectedItems.map((it) => `${(it.item_reference || '').trim()}|${(it.region || '').trim()}`));
+    if (plots.size > 1) {
+      setError('لا يمكن تجميع بنود الحديد في بند واحد لأن قطعة الأرض أو المنطقة مختلفة بين البنود.');
       return;
     }
 
     const gid = `steel_${nextGroupIndex}`;
-    const gname = `وزنة حديد مجمعة #${nextGroupIndex} (بسكول)`;
+    const gname = `حديد (مجمع من ${indicesToGroup.length} أقطار) #${nextGroupIndex}`;
 
     setPoItems((prev) => {
       const updated = [...prev];

@@ -268,6 +268,18 @@ class PurchaseOrderService
                         $firstConflict = $alreadyOrderedItems->first();
                         throw new \RuntimeException("البند [{$firstConflict->item_description}] تم إصدار أمر شراء سابق له بالفعل (#{$firstConflict->purchaseOrder?->po_number}).");
                     }
+
+                    // Lines merged into a consolidated "حديد" PO line are ordered too.
+                    $mergedSteelConflict = \App\Models\SteelItemComponent::whereIn('purchase_request_item_id', $targetPrItemIds)
+                        ->whereHas('purchaseOrderItem.purchaseOrder', function ($q) {
+                            $q->whereNotIn('status', ['REJECTED', 'CANCELLED', 'VOIDED', 'PO_DRAFT', 'RETURNED_TO_PROCUREMENT']);
+                        })
+                        ->with('purchaseOrderItem.purchaseOrder')
+                        ->first();
+
+                    if ($mergedSteelConflict) {
+                        throw new \RuntimeException("البند [{$mergedSteelConflict->item_description}] تم إصدار أمر شراء سابق له بالفعل ضمن بند حديد مجمع (#{$mergedSteelConflict->purchaseOrderItem?->purchaseOrder?->po_number}).");
+                    }
                 } else {
                     // Fallback when no items array provided
                     $existingPo = PurchaseOrder::where('purchase_request_id', $pr->id)
@@ -294,7 +306,7 @@ class PurchaseOrderService
 
                         $unassignedCount = $pr->items()->whereDoesntHave('purchaseOrderItems', function ($q) {
                             $q->whereHas('purchaseOrder', fn ($poq) => $poq->whereNotIn('status', ['REJECTED', 'CANCELLED', 'VOIDED']));
-                        })->count();
+                        })->whereNot(fn ($q) => SteelConsolidationService::orderedThroughSteelComponent($q))->count();
 
                         if ($unassignedCount === 0) {
                             throw new \RuntimeException('يوجد أمر شراء مصدر بالفعل لهذا الطلب (' . $existingPo->po_number . ').');
@@ -362,9 +374,7 @@ class PurchaseOrderService
                         'specifications'  => $specs,
                         'supplier_id'     => $itemSupplierId,
                         'is_supplementary'=> $isItemSupplementary,
-                        'is_consolidated_steel' => (bool) ($prItem?->is_consolidated_steel),
                     ]);
-                    app(SteelConsolidationService::class)->copyComponentsToPoItem($prItem, $poItem);
 
                     if ($prItem && (float) $prItem->quantity !== $qty && $uom !== 'TON') {
                         AuditLog::create([
@@ -399,7 +409,7 @@ class PurchaseOrderService
                         ? (float) ($prItem->estimated_unit_price ?? 0.00)
                         : (float) ($selectedQuote?->unit_price ?? 0.00);
 
-                    $poItem = $po->items()->create([
+                    $po->items()->create([
                         'pr_item_id'      => $prItem->id,
                         'item_id'         => $prItem->item_id,
                         'item_description'=> $prItem->item_description,
@@ -412,9 +422,7 @@ class PurchaseOrderService
                         'specifications'  => $specs,
                         'supplier_id'     => $prItem->supplier_id ?? $supplier?->id,
                         'is_supplementary'=> $pr->isComplementaryRequest() || (bool)($prItem?->is_supplementary),
-                        'is_consolidated_steel' => (bool) $prItem->is_consolidated_steel,
                     ]);
-                    app(SteelConsolidationService::class)->copyComponentsToPoItem($prItem, $poItem);
                 }
             }
 
@@ -1209,8 +1217,10 @@ class PurchaseOrderService
                 $pr = $lockedPo->purchaseRequest;
                 $allPrItemsCount = $pr->items()->count();
                 $coveredPrItemsCount = $pr->items()
-                    ->whereHas('purchaseOrderItems', function ($q) {
-                        $q->whereHas('purchaseOrder', fn ($poq) => $poq->whereNotIn('status', ['REJECTED', 'CANCELLED', 'VOIDED']));
+                    ->where(function ($covered) {
+                        $covered->whereHas('purchaseOrderItems', function ($q) {
+                            $q->whereHas('purchaseOrder', fn ($poq) => $poq->whereNotIn('status', ['REJECTED', 'CANCELLED', 'VOIDED']));
+                        })->orWhere(fn ($q) => SteelConsolidationService::orderedThroughSteelComponent($q));
                     })
                     ->count();
 

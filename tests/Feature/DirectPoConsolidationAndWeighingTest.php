@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Department;
 use App\Models\LandParcel;
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseReceipt;
 use App\Models\PurchaseReceiptItem;
 use App\Models\PurchaseRequest;
@@ -93,11 +94,9 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
     }
 
     /**
-     * Drive a direct PR through the real API until its PO exists.
-     * In the direct route the PO is issued as soon as procurement creates it.
-     * Returns [PurchaseRequest, PurchaseOrder(ISSUED)].
+     * Direct request through GM + accounting approval (PO not yet created).
      */
-    private function createDirectPo(array $items, ?int $expectedPoItems = null): array
+    private function approveDirectRequest(array $items): PurchaseRequest
     {
         $response = $this->actingAs($this->procurementManager, 'sanctum')
             ->postJson('/api/v1/procurement/direct-po', [
@@ -129,6 +128,18 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
             ->assertStatus(200)
             ->assertJsonPath('data.status', 'APPROVED_BY_ACCOUNTING');
 
+        return $pr->fresh('items');
+    }
+
+    /**
+     * Drive a direct PR through the real API until its PO exists.
+     * In the direct route the PO is issued as soon as procurement creates it.
+     * Returns [PurchaseRequest, PurchaseOrder(ISSUED)].
+     */
+    private function createDirectPo(array $items, ?int $expectedPoItems = null): array
+    {
+        $pr = $this->approveDirectRequest($items);
+
         $poResponse = $this->actingAs($this->procurementManager, 'sanctum')
             ->postJson('/api/v1/procurement/purchase-orders', [
                 'purchase_request_id' => $pr->id,
@@ -142,7 +153,6 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
 
         return [$pr, $po];
     }
-
 
     private function receivedFor(int $poItemId): float
     {
@@ -302,11 +312,12 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
     }
 
     // ───────────────────────────── Case B + C ─────────────────────────────
-    // Several rebar diameters are ONE financial line "حديد" from the direct request onwards.
+    // The request keeps every diameter; procurement groups the steel while issuing the PO
+    // ("تجميع وزنة حديد"), and the issued PO carries ONE financial line "حديد".
 
     private function steelLines(): array
     {
-        // 5 t 12 mm + 10 t 8 mm + 56 t 12 mm, same supplier / plot / region.
+        // 5 t 12 mm + 10 t 8 mm + 56 t 12 mm, same supplier / plot / region, plus cement.
         return [
             $this->item('حديد تسليح 12 مم', 5, 'TON', 38000),
             $this->item('حديد تسليح 8 مم', 10, 'TON', 39000),
@@ -315,32 +326,77 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
         ];
     }
 
+    private function poItemPayload($prItem): array
+    {
+        return [
+            'pr_item_id' => $prItem->id,
+            'item_id' => $prItem->item_id,
+            'item_description' => $prItem->item_description,
+            'item_reference' => $prItem->item_reference,
+            'region' => $prItem->region,
+            'quantity' => (float) $prItem->quantity,
+            'uom' => $prItem->uom,
+            'unit_price' => (float) $prItem->estimated_unit_price,
+            'supplier_id' => $this->supplier->id,
+        ];
+    }
+
+    /**
+     * Issue screen in "separate" mode: steel lines grouped as STEEL_WEIGHING, the rest as its own PO.
+     */
+    private function issueWithSteelGroup(PurchaseRequest $pr, ?array $steelPrItems = null)
+    {
+        $prItems = $pr->items()->orderBy('id')->get();
+        $steel = $steelPrItems ?? $prItems->filter(fn ($i) => str_contains($i->item_description, 'حديد'))->values()->all();
+        $steelIds = collect($steel)->pluck('id')->all();
+        $others = $prItems->reject(fn ($i) => in_array($i->id, $steelIds, true))->values();
+
+        $groups = [[
+            'group_name' => 'حديد',
+            'group_type' => 'STEEL_WEIGHING',
+            'supplier_id' => $this->supplier->id,
+            'items' => array_map(fn ($i) => $this->poItemPayload($i), $steel),
+        ]];
+        foreach ($others as $other) {
+            $groups[] = [
+                'group_name' => $other->item_description,
+                'group_type' => 'NONE',
+                'supplier_id' => $this->supplier->id,
+                'items' => [$this->poItemPayload($other)],
+            ];
+        }
+
+        return $this->actingAs($this->procurementManager, 'sanctum')
+            ->postJson('/api/v1/procurement/purchase-orders', [
+                'purchase_request_id' => $pr->id,
+                'supplier_id' => $this->supplier->id,
+                'groups' => $groups,
+            ]);
+    }
+
     private function createSteelPo(): array
     {
-        [$pr, $po] = $this->createDirectPo($this->steelLines(), 2);
-        $steel = $po->items->firstWhere('is_consolidated_steel', true);
-        $cement = $po->items->firstWhere('uom', 'BAG');
+        $pr = $this->approveDirectRequest($this->steelLines());
+        $this->issueWithSteelGroup($pr)->assertStatus(201);
 
-        return [$po, $steel, $cement, $pr];
+        $steel = PurchaseOrderItem::where('is_consolidated_steel', true)
+            ->whereHas('purchaseOrder', fn ($q) => $q->where('purchase_request_id', $pr->id))
+            ->firstOrFail();
+        $po = PurchaseOrder::with('items')->findOrFail($steel->purchase_order_id);
+
+        return [$po, $steel, $pr];
     }
 
-    private function groupSteel(PurchaseOrder $po, $steel): WeighingGroup
+    private function steelGroupOf(PurchaseOrder $po): WeighingGroup
     {
-        $response = $this->actingAs($this->procurementManager, 'sanctum')
-            ->postJson('/api/v1/weighing-groups', ['purchase_order_id' => $po->id, 'item_ids' => [$steel->id]]);
-        $response->assertStatus(201);
-
-        return WeighingGroup::with('items')->findOrFail($response->json('data.id'));
+        return WeighingGroup::with('items')->where('purchase_order_id', $po->id)->firstOrFail();
     }
 
-    private function receiveSteel(PurchaseOrder $po, WeighingGroup $group, $steel, $cement, $steelQty, ?float $net)
+    private function receiveSteel(PurchaseOrder $po, WeighingGroup $group, $steel, $steelQty, ?float $net)
     {
         $payload = [
             'weighing_group_id' => $group->id,
-            'items' => [
-                ['purchase_order_item_id' => $steel->id, 'received_quantity' => $steelQty],
-                ['purchase_order_item_id' => $cement->id, 'received_quantity' => 100],
-            ],
+            'items' => [['purchase_order_item_id' => $steel->id, 'received_quantity' => $steelQty]],
         ];
         if ($net !== null) {
             $payload['scale_ticket_weight'] = $net;
@@ -350,82 +406,100 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
             ->postJson("/api/v1/purchase-receipts/purchase-orders/{$po->id}", $payload);
     }
 
-    public function test_case_b_direct_request_consolidates_diameters_into_one_steel_line(): void
+    public function test_case_b_request_keeps_diameters_until_procurement_groups_them_on_the_po(): void
     {
-        [$po, $steel, $cement, $pr] = $this->createSteelPo();
+        $pr = $this->approveDirectRequest($this->steelLines());
+
+        // The request reaches procurement with every diameter as its own line.
+        $this->assertCount(4, $pr->items);
+        $this->assertSame(0, $pr->items->where('item_description', 'حديد')->count());
+
+        $this->issueWithSteelGroup($pr)->assertStatus(201);
         $amount = 5 * 38000 + 10 * 39000 + 56 * 38000; // 2,708,000
 
-        // Purchase request: one "حديد" line + cement, value = sum of the diameter amounts.
-        $pr->load('items.steelComponents');
-        $this->assertCount(2, $pr->items);
-        $prSteel = $pr->items->firstWhere('is_consolidated_steel', true);
-        $this->assertSame('حديد', $prSteel->item_description);
-        $this->assertSame('TON', $prSteel->uom);
-        $this->assertEquals(71.0, (float) $prSteel->quantity);
-        $this->assertEquals($amount, (float) $prSteel->estimated_line_total);
-        $this->assertEquals(round($amount / 71, 4), (float) $prSteel->estimated_unit_price); // weighted, not an average
-        $this->assertEquals($amount + 100 * 150, (float) $pr->fresh()->total_estimated_cost);
+        $pos = PurchaseOrder::with('items.steelComponents')->where('purchase_request_id', $pr->id)->orderBy('id')->get();
+        $this->assertCount(2, $pos); // steel PO + cement PO (separate mode)
+        $steelPo = $pos->first(fn ($po) => $po->items->contains('is_consolidated_steel', true));
 
-        // Diameters are kept as reference rows, as entered (12 mm appears twice).
-        $this->assertCount(3, $prSteel->steelComponents);
-        $this->assertSame(['12 مم', '8 مم', '12 مم'], $prSteel->steelComponents->pluck('size_or_diameter')->all());
-        $this->assertEquals($amount, (float) $prSteel->steelComponents->sum('line_amount'));
-
-        // Purchase order: still one steel line; its components are not PO items and not in any total.
+        // Exactly one financial line "حديد" on the steel PO.
+        $this->assertCount(1, $steelPo->items);
+        $steel = $steelPo->items->first();
         $this->assertSame('حديد', $steel->item_description);
+        $this->assertSame('TON', $steel->uom);
         $this->assertEquals(71.0, (float) $steel->quantity);
         $this->assertEquals($amount, (float) $steel->line_total);
-        $this->assertCount(3, $steel->steelComponents()->get());
-        $this->assertEquals($amount + 100 * 150, (float) $po->fresh()->grand_total);
-        $this->assertEquals(100.0, (float) $cement->quantity);
+        $this->assertEquals(round($amount / 71, 4), (float) $steel->unit_price); // weighted, not an average
+        $this->assertEquals($amount, (float) $steelPo->grand_total);
+        $this->assertSame('ISSUED', $steelPo->status);
+
+        // Diameters kept as reference rows (12 mm twice, as requested), linked to their request lines.
+        $this->assertCount(3, $steel->steelComponents);
+        $this->assertSame(['12 مم', '8 مم', '12 مم'], $steel->steelComponents->pluck('size_or_diameter')->all());
+        $this->assertEquals($amount, (float) $steel->steelComponents->sum('line_amount'));
+        $this->assertEqualsCanonicalizing(
+            $pr->items->filter(fn ($i) => str_contains($i->item_description, 'حديد'))->pluck('id')->all(),
+            $steel->steelComponents->pluck('purchase_request_item_id')->all()
+        );
+
+        // One weighing ticket on the single steel line.
+        $group = $this->steelGroupOf($steelPo);
+        $this->assertCount(1, $group->items);
+        $this->assertEquals(71.0, (float) $group->total_ordered_weight);
+        $this->assertEquals($amount, (float) $group->total_amount);
+
+        // Every request line counts as ordered: the request is fully issued and cannot be ordered twice.
+        $this->assertTrue($pr->items->every(fn ($i) => $i->fresh()->isOrdered()));
+        $this->assertSame('ISSUED', $pr->fresh()->status);
+        $this->actingAs($this->procurementManager, 'sanctum')
+            ->postJson('/api/v1/procurement/purchase-orders', [
+                'purchase_request_id' => $pr->id,
+                'supplier_id' => $this->supplier->id,
+                'items' => [$this->poItemPayload($pr->items->first())],
+            ])
+            ->assertStatus(409);
     }
 
-    public function test_case_b_only_matching_rebar_lines_are_consolidated(): void
+    public function test_case_b_grouping_rejects_other_plots_and_non_rebar_lines(): void
     {
-        [, $po] = $this->createDirectPo([
-            // Different plots: each keeps its own line (plot cost attribution).
+        // Different plots: grouping refused, nothing is issued (whole issue rolls back).
+        $pr = $this->approveDirectRequest([
             array_merge($this->item('حديد تسليح 12 مم', 5, 'TON', 38000), ['item_reference' => 'PARCEL-900']),
             array_merge($this->item('حديد تسليح 16 مم', 7, 'TON', 38000), ['item_reference' => 'PARCEL-901']),
-            // Not rebar (no ton conversion) even though it mentions حديد.
-            $this->item('باب حديد', 2, 'PCS', 3500),
-        ], 3);
+        ]);
+        $this->issueWithSteelGroup($pr)->assertStatus(422);
+        $this->assertSame(0, PurchaseOrder::where('purchase_request_id', $pr->id)->count());
 
+        // A non-rebar line (no weight unit) cannot be merged into "حديد".
+        $pr2 = $this->approveDirectRequest([
+            $this->item('حديد تسليح 12 مم', 5, 'TON', 38000),
+            $this->item('باب حديد', 2, 'PCS', 3500),
+        ]);
+        $this->issueWithSteelGroup($pr2, $pr2->items()->orderBy('id')->get()->all())->assertStatus(422);
+        $this->assertSame(0, PurchaseOrder::where('purchase_request_id', $pr2->id)->count());
+
+        // Without procurement grouping, nothing is merged.
+        [, $po] = $this->createDirectPo([
+            $this->item('حديد تسليح 12 مم', 5, 'TON', 38000),
+            $this->item('حديد تسليح 16 مم', 7, 'TON', 38000),
+        ]);
         $this->assertSame(0, $po->items->where('is_consolidated_steel', true)->count());
-        $this->assertEqualsCanonicalizing(
-            ['حديد تسليح 12 مم', 'حديد تسليح 16 مم', 'باب حديد'],
-            $po->items->pluck('item_description')->all()
-        );
     }
 
     public function test_case_b_one_ticket_one_receipt_with_one_steel_line_through_actual_po(): void
     {
-        [$po, $steel, $cement] = $this->createSteelPo();
+        [$po, $steel] = $this->createSteelPo();
         $unitPrice = (float) $steel->unit_price;
-
-        // Only the procurement manager may group; cement cannot join a steel group.
-        $this->actingAs($this->warehouseKeeper, 'sanctum')
-            ->postJson('/api/v1/weighing-groups', ['purchase_order_id' => $po->id, 'item_ids' => [$steel->id]])
-            ->assertStatus(422);
-        $this->actingAs($this->procurementManager, 'sanctum')
-            ->postJson('/api/v1/weighing-groups', ['purchase_order_id' => $po->id, 'item_ids' => [$steel->id, $cement->id]])
-            ->assertStatus(422);
-
-        $group = $this->groupSteel($po, $steel);
-        $this->assertEquals(71.0, (float) $group->total_ordered_weight);
-        $this->assertEquals((float) $steel->line_total, (float) $group->total_amount);
+        $group = $this->steelGroupOf($po);
         $this->assertSame('أقطار مجمعة', $group->items->first()->size_or_diameter);
 
         // Receiver enters 70.5 t once; the scale ticket says 70.8 t net. Neither is forced to the other.
-        $response = $this->receiveSteel($po, $group, $steel, $cement, 70.5, 70.8);
+        $response = $this->receiveSteel($po, $group, $steel, 70.5, 70.8);
         $response->assertStatus(201);
         $receipt = PurchaseReceipt::with('items')->findOrFail($response->json('data.id'));
 
         $this->assertSame($group->id, (int) $receipt->weighing_group_id);
-        $this->assertCount(2, $receipt->items);
-        $steelLines = $receipt->items->where('purchase_order_item_id', $steel->id);
-        $this->assertCount(1, $steelLines);
-        $this->assertEquals(70.5, (float) $steelLines->first()->received_quantity);
-        $this->assertEquals(100.0, $this->receivedFor($cement->id));
+        $this->assertCount(1, $receipt->items);
+        $this->assertEquals(70.5, (float) $receipt->items->first()->received_quantity);
 
         $group->refresh();
         $this->assertSame('RECEIVED', $group->status);
@@ -434,12 +508,12 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
         $this->assertEquals(round(70.5 * $unitPrice, 2), (float) $group->total_amount); // valued once, on the entered quantity
 
         // Retry / double click: no second receipt, no extra lines.
-        $this->receiveSteel($po, $group, $steel, $cement, 70.5, 70.8)->assertStatus(409);
+        $this->receiveSteel($po, $group, $steel, 70.5, 70.8)->assertStatus(409);
         $this->actingAs($this->warehouseKeeper, 'sanctum')
             ->postJson("/api/v1/weighing-groups/{$group->id}/receive", ['received_total_weight' => 70.8])
             ->assertStatus(410);
         $this->assertSame(1, PurchaseReceipt::where('purchase_order_id', $po->id)->count());
-        $this->assertSame(2, PurchaseReceiptItem::count());
+        $this->assertSame(1, PurchaseReceiptItem::where('purchase_receipt_id', $receipt->id)->count());
 
         // Site engineer inspection is unchanged.
         $this->actingAs($this->siteEngineer, 'sanctum')
@@ -447,27 +521,25 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
             ->assertStatus(200);
         $this->assertSame('PENDING_ACTUAL_PO', $po->fresh()->status);
 
-        // Actual PO keeps a single steel line; procurement prices cement at 90 bags.
+        // Actual PO keeps the single steel line.
         $this->actingAs($this->procurementManager, 'sanctum')
             ->postJson("/api/v1/procurement/purchase-orders/{$po->id}/finalize", [
                 'items' => [
-                    ['id' => $steel->id, 'item_description' => 'حديد', 'item_reference' => 'PARCEL-900', 'region' => 'المنطقة التاسعة', 'quantity' => 70.5, 'unit_price' => $unitPrice, 'uom' => 'TON'],
-                    ['id' => $cement->id, 'item_description' => $cement->item_description, 'item_reference' => 'PARCEL-900', 'region' => 'المنطقة التاسعة', 'quantity' => 90, 'unit_price' => 150, 'uom' => 'BAG'],
+                    ['id' => $steel->id, 'item_description' => 'حديد', 'item_reference' => 'PARCEL-900', 'region' => 'المنطقة التاسعة', 'quantity' => 70, 'unit_price' => $unitPrice, 'uom' => 'TON'],
                 ],
             ])
             ->assertStatus(200);
 
         $final = PurchaseOrder::with('items')->findOrFail($po->id);
         $this->assertSame('ISSUED', $final->status);
-        $this->assertCount(2, $final->items);
-        $this->assertSame(1, $final->items->where('is_consolidated_steel', true)->count());
-        $this->assertEquals(round(70.5 * $unitPrice, 2) + 90 * 150, (float) $final->grand_total);
+        $this->assertCount(1, $final->items);
+        $this->assertTrue((bool) $final->items->first()->is_consolidated_steel);
+        $this->assertEquals(round(70 * $unitPrice, 2), (float) $final->grand_total);
         $this->assertCount(3, $steel->steelComponents()->get()); // reference rows untouched
 
-        // Received quantities are never overwritten by the Actual PO.
+        // The received quantity is never overwritten by the Actual PO (70.5 received, 70 priced).
         $this->assertEquals(70.5, $this->receivedFor($steel->id));
-        $this->assertEquals(100.0, $this->receivedFor($cement->id));
-        $this->assertSame(2, PurchaseReceiptItem::count());
+        $this->assertSame(1, PurchaseReceiptItem::where('purchase_receipt_id', $receipt->id)->count());
 
         // Accounting value of the receipt = Actual PO total (steel counted once).
         $this->assertEquals(
@@ -478,18 +550,18 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
 
     public function test_case_b_entered_quantity_above_net_weight_or_without_ticket_weight_is_kept(): void
     {
-        [$po, $steel, $cement] = $this->createSteelPo();
-        $group = $this->groupSteel($po, $steel);
+        [$po, $steel] = $this->createSteelPo();
+        $group = $this->steelGroupOf($po);
 
         // 75 t entered (over-receipt vs 71 ordered and above the 70.8 t ticket) is accepted as is.
-        $this->receiveSteel($po, $group, $steel, $cement, 75, 70.8)->assertStatus(201);
+        $this->receiveSteel($po, $group, $steel, 75, 70.8)->assertStatus(201);
         $this->assertEquals(75.0, $this->receivedFor($steel->id));
         $this->assertEquals(70.8, (float) $group->fresh()->total_received_weight);
 
         // Without a ticket weight, the net weight stays empty instead of copying the entered quantity.
-        [$po2, $steel2, $cement2] = $this->createSteelPo();
-        $group2 = $this->groupSteel($po2, $steel2);
-        $this->receiveSteel($po2, $group2, $steel2, $cement2, 69.25, null)->assertStatus(201);
+        [$po2, $steel2] = $this->createSteelPo();
+        $group2 = $this->steelGroupOf($po2);
+        $this->receiveSteel($po2, $group2, $steel2, 69.25, null)->assertStatus(201);
         $this->assertEquals(69.25, $this->receivedFor($steel2->id));
         $this->assertNull($group2->fresh()->total_received_weight);
         $this->assertNull($group2->fresh()->weight_difference);
@@ -497,19 +569,11 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
 
     public function test_case_b_invalid_or_missing_steel_quantity_and_unauthorized_users_are_rejected(): void
     {
-        [$po, $steel, $cement] = $this->createSteelPo();
-        $group = $this->groupSteel($po, $steel);
+        [$po, $steel] = $this->createSteelPo();
+        $group = $this->steelGroupOf($po);
 
-        // Missing steel line while the ticket is attached.
-        $this->actingAs($this->warehouseKeeper, 'sanctum')
-            ->postJson("/api/v1/purchase-receipts/purchase-orders/{$po->id}", [
-                'weighing_group_id' => $group->id,
-                'items' => [['purchase_order_item_id' => $cement->id, 'received_quantity' => 100]],
-            ])
-            ->assertStatus(422);
-
-        $this->receiveSteel($po, $group, $steel, $cement, 'abc', 70.8)->assertStatus(422);
-        $this->receiveSteel($po, $group, $steel, $cement, -1, 70.8)->assertStatus(422);
+        $this->receiveSteel($po, $group, $steel, 'abc', 70.8)->assertStatus(422);
+        $this->receiveSteel($po, $group, $steel, -1, 70.8)->assertStatus(422);
 
         // Every seeded role holds purchase_receipt.edit (RolePermissionSeeder), so use a user without a role.
         $noRole = User::create([
@@ -530,13 +594,11 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
 
     public function test_case_b_cancelled_weighing_group_cannot_be_reactivated_by_a_receipt(): void
     {
-        [$po, $steel, $cement] = $this->createSteelPo();
-        $service = app(SteelWeighingGroupService::class);
+        [$po, $steel] = $this->createSteelPo();
+        $group = $this->steelGroupOf($po);
+        app(SteelWeighingGroupService::class)->cancelWeighingGroup($this->procurementManager, $group->id, 'أُلغيت');
 
-        $group = $service->createWeighingGroup($this->procurementManager, $po->id, [$steel->id]);
-        $service->cancelWeighingGroup($this->procurementManager, $group->id, 'أُلغيت');
-
-        $this->receiveSteel($po, $group, $steel, $cement, 71, 71)->assertStatus(422);
+        $this->receiveSteel($po, $group, $steel, 71, 71)->assertStatus(422);
 
         $this->assertSame('CANCELLED', $group->fresh()->status);
         $this->assertSame(0, PurchaseReceipt::where('purchase_order_id', $po->id)->count());
@@ -544,13 +606,13 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
 
     public function test_case_b_weighing_receipt_cannot_bypass_po_state(): void
     {
-        [$po, $steel, $cement] = $this->createSteelPo();
-        $group = $this->groupSteel($po, $steel);
+        [$po, $steel] = $this->createSteelPo();
+        $group = $this->steelGroupOf($po);
 
         // PO sent back to procurement after grouping: it is no longer approved for delivery.
         $po->update(['status' => 'RETURNED_TO_PROCUREMENT']);
 
-        $this->receiveSteel($po, $group, $steel, $cement, 71, 71)->assertStatus(409);
+        $this->receiveSteel($po, $group, $steel, 71, 71)->assertStatus(409);
         $this->actingAs($this->warehouseKeeper, 'sanctum')
             ->postJson("/api/v1/weighing-groups/{$group->id}/receive", ['received_total_weight' => 71])
             ->assertStatus(410);
@@ -561,15 +623,12 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
 
     public function test_case_b_rollback_leaves_ticket_pending_when_receipt_fails(): void
     {
-        [$po, $steel, $cement] = $this->createSteelPo();
-        $group = app(SteelWeighingGroupService::class)
-            ->createWeighingGroup($this->procurementManager, $po->id, [$steel->id]);
+        [$po, $steel] = $this->createSteelPo();
+        $group = $this->steelGroupOf($po);
 
-        // Cement line is negative -> the whole submission, steel included, must roll back.
         try {
             app(PurchaseReceiptService::class)->createByWarehouse($this->warehouseKeeper, $po, [
-                ['purchase_order_item_id' => $steel->id, 'received_quantity' => 70],
-                ['purchase_order_item_id' => $cement->id, 'received_quantity' => -1],
+                ['purchase_order_item_id' => $steel->id, 'received_quantity' => -1],
             ], null, null, null, null, null, $group->id, 70.8);
             $this->fail('Negative quantity must be rejected.');
         } catch (ValidationException) {

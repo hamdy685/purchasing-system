@@ -39,8 +39,6 @@ class PurchaseRequestItemResource extends JsonResource
             'specifications' => $this->specifications,
             'notes' => $this->notes,
             'is_supplementary' => (bool) $this->is_supplementary,
-            'is_consolidated_steel' => (bool) $this->is_consolidated_steel,
-            'steel_components' => $this->whenLoaded('steelComponents'),
             'supplement_batch' => $this->supplement_batch ? (int) $this->supplement_batch : null,
             'is_ordered' => method_exists($this->resource, 'isOrdered') ? $this->isOrdered() : false,
             'purchase_order_id' => $this->relationLoaded('purchaseOrderItems')

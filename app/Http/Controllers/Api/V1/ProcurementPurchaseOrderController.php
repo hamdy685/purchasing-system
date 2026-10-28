@@ -483,10 +483,17 @@ class ProcurementPurchaseOrderController extends Controller
                     $groupType = $group['group_type'] ?? null;
 
                     if ($groupType === 'STEEL_WEIGHING' && count($createdItemIds) > 0) {
+                        // Procurement's "تجميع وزنة حديد": the diameters become ONE PO line "حديد"
+                        // (diameters kept as reference details) before the PO is issued for receiving.
+                        $steelLine = app(\App\Services\SteelConsolidationService::class)->consolidatePoItems(
+                            $request->user(),
+                            $po,
+                            $createdItemIds
+                        );
                         app(\App\Services\SteelWeighingGroupService::class)->createWeighingGroup(
                             $request->user(),
                             $po->id,
-                            $createdItemIds,
+                            [$steelLine->id],
                             $group['notes'] ?? null
                         );
                     } elseif ($groupType === 'SHARED_SHIPMENT' && count($createdItemIds) > 0) {

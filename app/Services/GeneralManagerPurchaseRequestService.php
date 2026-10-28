@@ -187,24 +187,12 @@ class GeneralManagerPurchaseRequestService
                         'supplier_id' => $supplierId,
                         'estimated_unit_price' => $unitPrice,
                         'estimated_line_total' => $lineTotal,
-                        'is_consolidated_steel' => (bool) ($existingItem?->is_consolidated_steel),
-                        // Snapshot reference-only steel diameters before the items are recreated.
-                        '_steel_components' => $existingItem?->is_consolidated_steel
-                            ? $existingItem->steelComponents()->get()->map(fn ($c) => collect($c->getAttributes())
-                                ->except(['id', 'purchase_request_item_id', 'purchase_order_item_id', 'created_at', 'updated_at'])
-                                ->all())->all()
-                            : [],
                     ];
                 }
 
                 $pr->items()->delete();
                 foreach ($normalizedItems as $normItem) {
-                    $components = $normItem['_steel_components'];
-                    unset($normItem['_steel_components']);
-                    $newItem = $pr->items()->create($normItem);
-                    foreach ($components as $component) {
-                        $newItem->steelComponents()->create($component);
-                    }
+                    $pr->items()->create($normItem);
                 }
 
                 if ($primarySupplierId) {

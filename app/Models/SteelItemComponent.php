@@ -6,14 +6,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Reference-only diameter detail under a consolidated steel (حديد) line.
+ * Reference-only diameter detail under a consolidated steel (حديد) PO line.
  * Never part of any financial total: the parent line carries quantity and value.
  */
 class SteelItemComponent extends Model
 {
     protected $fillable = [
-        'purchase_request_item_id',
         'purchase_order_item_id',
+        'purchase_request_item_id',
         'item_id',
         'item_description',
         'size_or_diameter',
@@ -37,13 +37,13 @@ class SteelItemComponent extends Model
         ];
     }
 
-    public function purchaseRequestItem(): BelongsTo
-    {
-        return $this->belongsTo(PurchaseRequestItem::class);
-    }
-
     public function purchaseOrderItem(): BelongsTo
     {
         return $this->belongsTo(PurchaseOrderItem::class);
+    }
+
+    public function purchaseRequestItem(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseRequestItem::class);
     }
 }

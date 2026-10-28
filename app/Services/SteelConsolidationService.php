@@ -2,14 +2,17 @@
 
 namespace App\Services;
 
+use App\Models\AuditLog;
+use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
-use App\Models\PurchaseRequestItem;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
- * Consolidates several rebar lines of a direct purchase request into ONE
- * financial line named "حديد" (quantity in tons, value = sum of the original
- * line amounts). The original lines are kept as reference-only components.
+ * Merges the rebar lines procurement grouped while issuing a PO into ONE financial
+ * PO line named "حديد" (quantity in tons, value = sum of the original line totals).
+ * The original diameter lines are kept as reference-only components.
  */
 class SteelConsolidationService
 {
@@ -23,11 +26,9 @@ class SteelConsolidationService
         'BAR_5LINIA'   => 0.0190,
     ];
 
-    private const STEEL_KEYWORDS = ['حديد', 'تسليح', 'rebar', 'steel'];
-
     /**
      * Convert a quantity to tons using the system's established steel units.
-     * Returns null when the unit has no reliable conversion (the line is then left untouched).
+     * Returns null when the unit has no reliable conversion.
      */
     public function toTons(float $quantity, ?string $uom): ?float
     {
@@ -50,44 +51,9 @@ class SteelConsolidationService
         return null;
     }
 
-    /**
-     * A line is consolidatable rebar only when its unit converts to tons AND it is steel
-     * by catalog category (STEEL) or by description, excluding known non-rebar materials.
-     */
-    public function isRebarLine(array $item): bool
+    public function extractDiameter(PurchaseOrderItem $item): ?string
     {
-        if ($this->toTons(1.0, $item['uom'] ?? null) === null) {
-            return false;
-        }
-
-        if (! empty($item['item_id'])) {
-            $categoryCode = DB::table('items')
-                ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
-                ->where('items.id', $item['item_id'])
-                ->value('categories.code');
-            if (strtoupper(trim((string) $categoryCode)) === 'STEEL') {
-                return true;
-            }
-        }
-
-        $desc = mb_strtolower(trim((string) ($item['item_description'] ?? '')));
-        foreach (SteelWeighingGroupService::EXCLUDED_KEYWORDS as $excluded) {
-            if (mb_strpos($desc, $excluded) !== false) {
-                return false;
-            }
-        }
-        foreach (self::STEEL_KEYWORDS as $keyword) {
-            if (mb_strpos($desc, $keyword) !== false) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    public function extractDiameter(array $item): ?string
-    {
-        $text = trim(($item['item_description'] ?? '') . ' ' . ($item['specifications'] ?? ''));
+        $text = trim($item->item_description . ' ' . $item->specifications);
         if (preg_match('/(\d+(?:\.\d+)?)\s*(?:مم|ملل|ملى|ملي|mm)/iu', $text, $m)) {
             return "{$m[1]} مم";
         }
@@ -102,131 +68,127 @@ class SteelConsolidationService
     }
 
     /**
-     * Split submitted direct-request lines into plain lines and consolidated steel lines.
-     * Rebar lines sharing supplier + plot + region (two or more of them) become one "حديد" line.
-     * Order is preserved: the consolidated line takes the position of its first member.
-     *
-     * @return array<int, array{type: string, item: array, components?: array}>
+     * Replace the given PO lines by one consolidated "حديد" line. Must run inside the
+     * PO creation transaction, before any receipt exists.
      */
-    public function consolidate(array $items): array
+    public function consolidatePoItems(User $user, PurchaseOrder $po, array $itemIds): PurchaseOrderItem
     {
-        $groups = [];
-        foreach ($items as $index => $item) {
-            if (! $this->isRebarLine($item)) {
-                continue;
-            }
-            $key = implode('|', [
-                (string) ($item['supplier_id'] ?? ''),
-                trim((string) ($item['item_reference'] ?? '')),
-                trim((string) ($item['region'] ?? '')),
-            ]);
-            $groups[$key][] = $index;
+        $items = $po->items()->whereIn('id', $itemIds)->orderBy('id')->get();
+        if ($items->count() !== count($itemIds)) {
+            throw ValidationException::withMessages(['items' => ['بعض البنود المحددة غير تابعة لأمر الشراء هذا.']]);
+        }
+        if ($items->count() < 2) {
+            return $items->first();
         }
 
-        $groupOf = [];
-        foreach ($groups as $key => $indexes) {
-            if (count($indexes) >= 2) {
-                foreach ($indexes as $index) {
-                    $groupOf[$index] = $key;
-                }
+        if ($po->receipts()->exists()) {
+            throw ValidationException::withMessages(['items' => ['لا يمكن تجميع الحديد بعد تسجيل إذن استلام لأمر الشراء.']]);
+        }
+
+        $weighingService = app(SteelWeighingGroupService::class);
+        foreach ($items as $item) {
+            if (! $weighingService->isSteelItem($item) || $this->toTons(1.0, $item->uom) === null) {
+                throw ValidationException::withMessages([
+                    'items' => ["البند ({$item->item_description}) ليس حديد تسليح بوحدة وزن معروفة، ولا يمكن تجميعه في بند حديد."],
+                ]);
             }
         }
 
-        $entries = [];
-        $emitted = [];
-        foreach ($items as $index => $item) {
-            if (! isset($groupOf[$index])) {
-                $entries[] = ['type' => 'plain', 'item' => $item];
-                continue;
-            }
-            $key = $groupOf[$index];
-            if (isset($emitted[$key])) {
-                continue;
-            }
-            $emitted[$key] = true;
-            $entries[] = $this->buildConsolidatedEntry(array_map(fn ($i) => $items[$i], $groups[$key]));
+        $distinct = fn (callable $value) => $items->map($value)->map(fn ($v) => trim((string) $v))->unique();
+        if ($distinct(fn ($it) => $it->supplier_id ?: $po->supplier_id)->count() > 1) {
+            throw ValidationException::withMessages(['supplier' => ['لا يمكن تجميع الحديد لأن المورد مختلف بين البنود.']]);
+        }
+        if ($distinct(fn ($it) => $it->item_reference)->count() > 1 || $distinct(fn ($it) => $it->region)->count() > 1) {
+            throw ValidationException::withMessages(['items' => ['لا يمكن تجميع الحديد لأن قطعة الأرض أو المنطقة مختلفة بين البنود (تكلفة كل قطعة تُحسب منفصلة).']]);
         }
 
-        return $entries;
-    }
-
-    private function buildConsolidatedEntry(array $members): array
-    {
         $totalTons = 0.0;
         $totalAmount = 0.0;
         $components = [];
         $summary = [];
-
-        foreach ($members as $order => $member) {
-            $qty = (float) $member['quantity'];
-            $price = (float) $member['unit_price'];
-            $tons = round($this->toTons($qty, $member['uom'] ?? null), 4);
-            // Same per-line amount the request total is built from (quantity × unit price as entered).
-            $amount = round($qty * $price, 2);
-
+        foreach ($items->values() as $order => $item) {
+            $tons = round($this->toTons((float) $item->quantity, $item->uom), 4);
+            $amount = round((float) $item->line_total, 2);
             $totalTons += $tons;
             $totalAmount += $amount;
+            $diameter = $this->extractDiameter($item);
 
-            $diameter = $this->extractDiameter($member);
             $components[] = [
-                'item_id' => $member['item_id'] ?? null,
-                'item_description' => $member['item_description'],
+                'purchase_request_item_id' => $item->pr_item_id,
+                'item_id' => $item->item_id,
+                'item_description' => $item->item_description,
                 'size_or_diameter' => $diameter,
-                'quantity' => $qty,
-                'uom' => $member['uom'] ?? 'TON',
+                'quantity' => (float) $item->quantity,
+                'uom' => $item->uom,
                 'quantity_in_tons' => $tons,
-                'unit_price' => $price,
+                'unit_price' => (float) $item->unit_price,
                 'line_amount' => $amount,
-                'specifications' => $member['specifications'] ?? null,
+                'specifications' => $item->specifications,
                 'sort_order' => $order,
             ];
-            $summary[] = ($diameter ?: $member['item_description']) . ': ' . $this->formatNumber($tons) . ' طن';
+            $summary[] = ($diameter ?: $item->item_description) . ': ' . rtrim(rtrim(number_format($tons, 4, '.', ''), '0'), '.') . ' طن';
         }
 
         $totalTons = round($totalTons, 4);
         $totalAmount = round($totalAmount, 2);
-        // Weighted unit price: preserves the summed amount (never a plain average of prices).
-        $unitPrice = $totalTons > 0 ? round($totalAmount / $totalTons, 4) : 0.0;
-        $first = $members[0];
+        $first = $items->first();
 
-        return [
-            'type' => 'steel',
-            'item' => [
-                'item_id' => null,
-                'supplier_id' => $first['supplier_id'] ?? null,
+        $consolidated = $po->items()->create([
+            'item_description' => self::CONSOLIDATED_NAME,
+            'item_reference' => $first->item_reference,
+            'region' => $first->region,
+            'quantity' => $totalTons,
+            'uom' => 'TON',
+            // Weighted ton price that preserves the summed value (never a plain average of prices).
+            'unit_price' => $totalTons > 0 ? round($totalAmount / $totalTons, 4) : 0,
+            'specifications' => 'حديد مجمع (' . $items->count() . ' بنود): ' . implode(' + ', $summary),
+            'supplier_id' => $first->supplier_id ?: $po->supplier_id,
+            'is_supplementary' => (bool) $first->is_supplementary,
+            'is_consolidated_steel' => true,
+        ]);
+
+        foreach ($components as $component) {
+            $consolidated->steelComponents()->create($component);
+        }
+
+        PurchaseOrderItem::whereIn('id', $items->pluck('id'))->delete();
+
+        AuditLog::create([
+            'user_id' => $user->id,
+            'entity_type' => PurchaseOrderItem::class,
+            'entity_id' => $consolidated->id,
+            'action' => 'STEEL_LINES_CONSOLIDATED',
+            'field_name' => 'item_description',
+            'old_value' => json_encode($items->map(fn ($it) => [
+                'id' => $it->id,
+                'pr_item_id' => $it->pr_item_id,
+                'item_description' => $it->item_description,
+                'quantity' => (float) $it->quantity,
+                'uom' => $it->uom,
+                'line_total' => (float) $it->line_total,
+            ])->values()->all(), JSON_UNESCAPED_UNICODE),
+            'new_value' => json_encode([
                 'item_description' => self::CONSOLIDATED_NAME,
-                'item_reference' => $first['item_reference'],
-                'region' => $first['region'],
                 'quantity' => $totalTons,
-                'uom' => 'TON',
-                'unit_price' => $unitPrice,
-                'line_total' => $totalAmount,
-                'specifications' => 'حديد مجمع (' . count($members) . ' بنود): ' . implode(' + ', $summary),
-            ],
-            'components' => $components,
-        ];
+                'line_value' => $totalAmount,
+            ], JSON_UNESCAPED_UNICODE),
+        ]);
+
+        return $consolidated->fresh();
     }
 
     /**
-     * Copy the reference-only diameter details of a consolidated request line to its PO line.
+     * Purchase request lines merged into an active consolidated PO line still count as ordered.
      */
-    public function copyComponentsToPoItem(?PurchaseRequestItem $prItem, PurchaseOrderItem $poItem): void
+    public static function orderedThroughSteelComponent($prItemQuery): void
     {
-        if (! $prItem || ! $prItem->is_consolidated_steel) {
-            return;
-        }
-
-        foreach ($prItem->steelComponents()->get() as $component) {
-            $poItem->steelComponents()->create(
-                collect($component->getAttributes())
-                    ->only(['item_id', 'item_description', 'size_or_diameter', 'quantity', 'uom', 'quantity_in_tons', 'unit_price', 'line_amount', 'specifications', 'sort_order'])
-                    ->all()
-            );
-        }
-    }
-
-    private function formatNumber(float $value): string
-    {
-        return rtrim(rtrim(number_format($value, 4, '.', ''), '0'), '.');
+        $prItemQuery->whereExists(function ($q) {
+            $q->select(DB::raw(1))
+                ->from('steel_item_components')
+                ->join('purchase_order_items', 'purchase_order_items.id', '=', 'steel_item_components.purchase_order_item_id')
+                ->join('purchase_orders', 'purchase_orders.id', '=', 'purchase_order_items.purchase_order_id')
+                ->whereColumn('steel_item_components.purchase_request_item_id', 'purchase_request_items.id')
+                ->whereNotIn('purchase_orders.status', ['REJECTED', 'CANCELLED', 'VOIDED']);
+        });
     }
 }

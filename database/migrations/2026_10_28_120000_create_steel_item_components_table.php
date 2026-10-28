@@ -7,28 +7,27 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Consolidated steel (حديد) in direct purchase orders.
+     * Consolidated steel (حديد) in purchase orders.
      *
-     * Several rebar diameters are carried as ONE financial line flagged with
-     * is_consolidated_steel. The original diameter lines are kept, for reference
-     * only, in steel_item_components and are never summed financially.
+     * When procurement groups rebar diameters while issuing a PO, they become ONE
+     * financial PO line flagged with is_consolidated_steel. The original diameter
+     * lines are kept, for reference only, in steel_item_components (each still
+     * pointing at the purchase request line it came from) and are never summed.
      * Additive only: existing rows are untouched.
      */
     public function up(): void
     {
-        foreach (['purchase_request_items', 'purchase_order_items'] as $tableName) {
-            if (Schema::hasTable($tableName) && ! Schema::hasColumn($tableName, 'is_consolidated_steel')) {
-                Schema::table($tableName, function (Blueprint $table) {
-                    $table->boolean('is_consolidated_steel')->default(false);
-                });
-            }
+        if (Schema::hasTable('purchase_order_items') && ! Schema::hasColumn('purchase_order_items', 'is_consolidated_steel')) {
+            Schema::table('purchase_order_items', function (Blueprint $table) {
+                $table->boolean('is_consolidated_steel')->default(false);
+            });
         }
 
         if (! Schema::hasTable('steel_item_components')) {
             Schema::create('steel_item_components', function (Blueprint $table) {
                 $table->id();
-                $table->foreignId('purchase_request_item_id')->nullable()->constrained('purchase_request_items')->cascadeOnDelete();
-                $table->foreignId('purchase_order_item_id')->nullable()->constrained('purchase_order_items')->cascadeOnDelete();
+                $table->foreignId('purchase_order_item_id')->constrained('purchase_order_items')->cascadeOnDelete();
+                $table->foreignId('purchase_request_item_id')->nullable()->constrained('purchase_request_items')->nullOnDelete();
                 $table->foreignId('item_id')->nullable()->constrained('items')->nullOnDelete();
                 $table->string('item_description', 255);
                 $table->string('size_or_diameter', 50)->nullable();
@@ -41,8 +40,8 @@ return new class extends Migration
                 $table->unsignedInteger('sort_order')->default(0);
                 $table->timestamps();
 
-                $table->index('purchase_request_item_id');
                 $table->index('purchase_order_item_id');
+                $table->index('purchase_request_item_id');
             });
         }
     }
@@ -51,12 +50,10 @@ return new class extends Migration
     {
         Schema::dropIfExists('steel_item_components');
 
-        foreach (['purchase_request_items', 'purchase_order_items'] as $tableName) {
-            if (Schema::hasTable($tableName) && Schema::hasColumn($tableName, 'is_consolidated_steel')) {
-                Schema::table($tableName, function (Blueprint $table) {
-                    $table->dropColumn('is_consolidated_steel');
-                });
-            }
+        if (Schema::hasTable('purchase_order_items') && Schema::hasColumn('purchase_order_items', 'is_consolidated_steel')) {
+            Schema::table('purchase_order_items', function (Blueprint $table) {
+                $table->dropColumn('is_consolidated_steel');
+            });
         }
     }
 };
