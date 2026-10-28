@@ -655,7 +655,12 @@ class SupplierInvoiceService
                 ?: ($requestModel?->landParcel?->region ?: '—'))));
 
             $receiptItem = $receipt?->items?->firstWhere('purchase_order_item_id', $poItem->id);
-            $quantity = (float) ($receiptItem?->received_quantity ?? $poItem->quantity);
+            $receivedQuantity = $receiptItem?->received_quantity !== null ? (float) $receiptItem->received_quantity : null;
+            // Once the Actual PO is issued it is what the supplier is owed (and what the invoice carries);
+            // the receipt keeps the quantity actually received, which may differ (over/under receipt).
+            $quantity = $order?->finalized_at
+                ? (float) $poItem->quantity
+                : (float) ($receivedQuantity ?? $poItem->quantity);
             $unitPrice = (float) $poItem->unit_price;
             $value = round($quantity * $unitPrice, 2);
 
@@ -671,6 +676,7 @@ class SupplierInvoiceService
                 'parcel' => $parcel,
                 'region' => $region,
                 'quantity' => $quantity,
+                'received_quantity' => $receivedQuantity,
                 'uom' => $poItem->uom ?? '—',
                 'unit_price' => $unitPrice,
                 'value' => $value,

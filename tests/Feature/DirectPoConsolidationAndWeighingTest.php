@@ -546,6 +546,16 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
             (float) $final->grand_total,
             app(\App\Services\SupplierInvoiceService::class)->calculateReceiptValue($receipt->fresh())
         );
+
+        // Supplier ledger: one steel supply row valued on the Actual PO (70 t), matching the invoice,
+        // while still showing the 70.5 t actually received.
+        $ledger = app(\App\Services\SupplierInvoiceService::class)->buildSupplierLedger($this->supplier->fresh());
+        $supplyRows = collect($ledger['rows'] ?? $ledger)->where('type', 'SUPPLY')->where('purchase_order_id', $po->id)->values();
+        $this->assertCount(1, $supplyRows);
+        $this->assertSame('حديد', $supplyRows[0]['description']);
+        $this->assertEquals(70.0, $supplyRows[0]['quantity']);
+        $this->assertEquals(70.5, $supplyRows[0]['received_quantity']);
+        $this->assertEquals((float) $final->grand_total, $supplyRows[0]['value']);
     }
 
     public function test_case_b_entered_quantity_above_net_weight_or_without_ticket_weight_is_kept(): void
