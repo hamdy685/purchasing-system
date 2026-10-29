@@ -305,7 +305,7 @@ export const SiteAccountantDashboardPage: React.FC = () => {
         onPreviewReceipt: () => {
           setSelectedCycleReceipt(receipt);
         },
-        documentSlot: <DocumentStatusButtons {...getReceiptDocumentButtons(receipt, () => setSelectedCycleReceipt(receipt))} />,
+        documentSlot: <DocumentStatusButtons {...getReceiptDocumentButtons(receipt)} />,
       });
     }
 
@@ -697,7 +697,7 @@ export const SiteAccountantDashboardPage: React.FC = () => {
                               </Button>
 
                               {/* 2. زرّا حالة المستندات: إذن الاستلام والفاتورة (أخضر إذا توفر ورمادي إذا لم يتوفر) */}
-                              <DocumentStatusButtons {...getReceiptDocumentButtons(receipt, () => setSelectedCycleReceipt(receipt))} />
+                              <DocumentStatusButtons {...getReceiptDocumentButtons(receipt)} />
 
 
                               {/* 2. إرسال عبر واتساب */}

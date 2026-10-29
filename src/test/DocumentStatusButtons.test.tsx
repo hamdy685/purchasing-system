@@ -13,8 +13,12 @@ import type { ApprovedReceipt, ReceiptDocumentStatus, SupplierInvoice } from '..
 import * as authStorage from '../utils/authStorage';
 import * as authApi from '../api/auth';
 
-const makeStatus = (invoice: Partial<ReceiptDocumentStatus['invoice']> = {}, receiptExists = true): ReceiptDocumentStatus => ({
-  receipt: { exists: receiptExists, id: 59, number: 'REC-SITE-59', has_file: false },
+const DRIVE_PHOTO = 'https://drive.google.com/file/d/RcPt59/view';
+const makeStatus = (
+  invoice: Partial<ReceiptDocumentStatus['invoice']> = {},
+  receipt: Partial<ReceiptDocumentStatus['receipt']> = {},
+): ReceiptDocumentStatus => ({
+  receipt: { exists: true, id: 59, number: 'REC-SITE-59', has_file: true, file_url: DRIVE_PHOTO, file_source: 'receipt_photo', ...receipt },
   invoice: { exists: false, has_file: false, file_url: null, po_number: 'PO-77', count: 0, invoices: [], ...invoice },
 });
 
@@ -44,32 +48,44 @@ const receiptBtn = () => screen.getByTestId('doc-btn-receipt');
 const invoiceBtn = () => screen.getByTestId('doc-btn-invoice');
 
 describe('DocumentStatusButtons («إذن الاستلام» / «الفاتورة»)', () => {
-  it('receipt present → active receipt button that opens the receipt preview', () => {
-    const onOpen = vi.fn();
-    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(makeStatus()), onOpen)} />);
+  it('receipt photo uploaded → active receipt link opening the Drive photo in a new tab', () => {
+    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(makeStatus()))} />);
 
     expect(receiptBtn()).toHaveAttribute('data-state', 'active');
     expect(receiptBtn()).toHaveTextContent('إذن الاستلام');
-    expect(receiptBtn().getAttribute('title')).toContain('REC-SITE-59');
-    fireEvent.click(receiptBtn());
-    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(receiptBtn()).toHaveAttribute('href', DRIVE_PHOTO);
+    expect(receiptBtn()).toHaveAttribute('target', '_blank');
+    expect(receiptBtn().getAttribute('title')).toContain('صورة إذن الاستلام');
   });
 
-  it('receipt absent → inactive receipt button that opens nothing', () => {
-    const onOpen = vi.fn();
-    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(makeStatus({}, false)), onOpen)} />);
+  it('steel receipt → opens the scale-ticket (weight) photo', () => {
+    const scale = 'https://drive.google.com/file/d/ScAlE/view';
+    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(makeStatus({}, { file_url: scale, file_source: 'scale_ticket' })))} />);
+
+    expect(receiptBtn()).toHaveAttribute('href', scale);
+    expect(receiptBtn().getAttribute('title')).toContain('وزن الحديد');
+  });
+
+  it('API-stored receipt photo → link carries the auth token', () => {
+    vi.spyOn(authStorage, 'getToken').mockReturnValue('tok-123');
+    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(makeStatus({}, { file_url: '/api/v1/purchase-receipts/59/photo' })))} />);
+    expect(receiptBtn().getAttribute('href')).toContain('/api/v1/purchase-receipts/59/photo?token=tok-123');
+  });
+
+  it('receipt record without uploaded photo → inactive receipt button that opens nothing', () => {
+    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(makeStatus({}, { has_file: false, file_url: null, file_source: null })))} />);
 
     expect(receiptBtn()).toHaveAttribute('data-state', 'inactive');
     expect(receiptBtn()).toHaveAttribute('aria-disabled', 'true');
+    expect(receiptBtn()).not.toHaveAttribute('href');
     expect(receiptBtn()).toHaveTextContent('إذن الاستلام');
-    expect(receiptBtn().getAttribute('title')).toContain('لا يوجد إذن استلام');
+    expect(receiptBtn().getAttribute('title')).toContain('لم تُرفع صورة إذن الاستلام');
     fireEvent.click(receiptBtn());
-    expect(onOpen).not.toHaveBeenCalled();
-    expect(screen.getByTestId('location')).toHaveTextContent('/accounting');
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/accounting$/);
   });
 
   it('invoice absent → inactive invoice button: no link and no navigation', () => {
-    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(makeStatus()), vi.fn())} />);
+    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(makeStatus()))} />);
 
     expect(invoiceBtn()).toHaveAttribute('data-state', 'inactive');
     expect(invoiceBtn().tagName).toBe('BUTTON');
@@ -80,14 +96,14 @@ describe('DocumentStatusButtons («إذن الاستلام» / «الفاتور�
   });
 
   it('missing document_status (no proof) → invoice stays inactive', () => {
-    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(undefined), vi.fn())} />);
+    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(undefined))} />);
     expect(invoiceBtn()).toHaveAttribute('data-state', 'inactive');
     expect(receiptBtn()).toHaveAttribute('data-state', 'inactive');
   });
 
   it('invoice file stored → active invoice link opening the stored file in a new tab', () => {
     const status = makeStatus({ exists: true, has_file: true, file_url: 'https://drive.google.com/file/d/AbC/view' });
-    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(status), vi.fn())} />);
+    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(status))} />);
 
     expect(invoiceBtn()).toHaveAttribute('data-state', 'active');
     expect(invoiceBtn()).toHaveAttribute('href', 'https://drive.google.com/file/d/AbC/view');
@@ -97,7 +113,7 @@ describe('DocumentStatusButtons («إذن الاستلام» / «الفاتور�
 
   it('one registered invoice → opens that invoice in the invoices archive', () => {
     const status = makeStatus({ exists: true, count: 1, invoices: [{ id: 5, invoice_number: 'INV-900' }] });
-    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(status), vi.fn())} />);
+    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(status))} />);
 
     fireEvent.click(invoiceBtn());
     expect(screen.getByTestId('location')).toHaveTextContent('/accounting/supplier-finance?tab=payments&invoice_number=INV-900');
@@ -109,7 +125,7 @@ describe('DocumentStatusButtons («إذن الاستلام» / «الفاتور�
       count: 2,
       invoices: [{ id: 5, invoice_number: 'INV-1' }, { id: 6, invoice_number: 'INV-2' }],
     });
-    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(status), vi.fn())} />);
+    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(status))} />);
 
     expect(invoiceBtn().getAttribute('title')).toContain('2 فواتير');
     fireEvent.click(invoiceBtn());
@@ -117,7 +133,7 @@ describe('DocumentStatusButtons («إذن الاستلام» / «الفاتور�
   });
 
   it('receipt present without invoice → two independent states', () => {
-    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(makeStatus()), vi.fn())} />);
+    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(makeStatus()))} />);
     expect(receiptBtn()).toHaveAttribute('data-state', 'active');
     expect(invoiceBtn()).toHaveAttribute('data-state', 'inactive');
   });
@@ -132,16 +148,21 @@ describe('DocumentStatusButtons («إذن الاستلام» / «الفاتور�
     expect(screen.getByTestId('location')).toHaveTextContent(/^\/accounting$/);
   });
 
-  it('invoice card with linked receipt → receipt opens the existing receipt preview route', () => {
-    const invoice = { id: 8, invoice_number: 'INV-8', purchase_receipt: { id: 61, receipt_number: 'REC-SITE-61' } } as unknown as SupplierInvoice;
+  it('invoice card with linked receipt photo → receipt opens that photo', () => {
+    const invoice = {
+      id: 8,
+      invoice_number: 'INV-8',
+      purchase_receipt: { id: 61, receipt_number: 'REC-SITE-61' },
+      receipt_photo_status: { exists: true, id: 61, number: 'REC-SITE-61', has_file: true, file_url: DRIVE_PHOTO, file_source: 'receipt_photo' },
+    } as unknown as SupplierInvoice;
     renderButtons(<DocumentStatusButtons {...getInvoiceDocumentButtons(invoice)} />);
 
-    fireEvent.click(receiptBtn());
-    expect(screen.getByTestId('location')).toHaveTextContent('/accounting/supplier-finance?tab=payments&purchase_receipt_id=61');
+    expect(receiptBtn()).toHaveAttribute('data-state', 'active');
+    expect(receiptBtn()).toHaveAttribute('href', DRIVE_PHOTO);
   });
 
   it('layout is RTL and wraps safely on small screens (buttons share the row, text never hidden)', () => {
-    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(makeStatus()), vi.fn())} />);
+    renderButtons(<DocumentStatusButtons {...getReceiptDocumentButtons(makeReceipt(makeStatus()))} />);
     const row = screen.getByTestId('document-status-buttons');
     expect(row).toHaveAttribute('dir', 'rtl');
     expect(row.className).toContain('flex');
@@ -170,7 +191,7 @@ describe('ActionRequiredInbox urgent cards with document buttons', () => {
 
   it('renders both buttons inside the card while keeping the existing actions', () => {
     const onPreview = vi.fn();
-    const receipt = makeReceipt(makeStatus());
+    const receipt = makeReceipt(makeStatus({}, { has_file: false, file_url: null, file_source: null }));
     const item: ActionInboxItem = {
       id: 'rcpt-59',
       rawId: 59,
@@ -185,7 +206,7 @@ describe('ActionRequiredInbox urgent cards with document buttons', () => {
       onDirectApprove: vi.fn(),
       directApproveLabel: 'تم التسجيل',
       onPreviewReceipt: onPreview,
-      documentSlot: <DocumentStatusButtons {...getReceiptDocumentButtons(receipt, onPreview)} />,
+      documentSlot: <DocumentStatusButtons {...getReceiptDocumentButtons(receipt)} />,
     };
 
     render(
@@ -197,13 +218,15 @@ describe('ActionRequiredInbox urgent cards with document buttons', () => {
     );
 
     const row = screen.getByTestId('document-status-buttons');
-    expect(within(row).getByTestId('doc-btn-receipt')).toHaveAttribute('data-state', 'active');
+    expect(within(row).getByTestId('doc-btn-receipt')).toHaveAttribute('data-state', 'inactive');
     expect(within(row).getByTestId('doc-btn-invoice')).toHaveAttribute('data-state', 'inactive');
     expect(screen.getByText('تسجيل الفاتورة')).toBeInTheDocument();
     expect(screen.getByText('معاينة الإذن')).toBeInTheDocument();
     expect(screen.getByText('تم التسجيل')).toBeInTheDocument();
 
     fireEvent.click(within(row).getByTestId('doc-btn-receipt'));
+    expect(onPreview).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('معاينة الإذن'));
     expect(onPreview).toHaveBeenCalledTimes(1);
   });
 });

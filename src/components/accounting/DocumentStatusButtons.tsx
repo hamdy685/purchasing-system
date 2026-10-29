@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import type { ApprovedReceipt, SupplierInvoice } from '../../api/supplierFinance';
+import type { ApprovedReceipt, ReceiptPhotoStatus, SupplierInvoice } from '../../api/supplierFinance';
+import { getReceiptPhotoUrl } from '../../api/purchaseReceipts';
 
 /**
  * State of one document button. An active button opens exactly one destination:
@@ -17,22 +18,34 @@ export interface DocumentButtonState {
 const invoicesArchiveUrl = (params: Record<string, string>) =>
   `/accounting/supplier-finance?${new URLSearchParams({ tab: 'payments', ...params }).toString()}`;
 
+/** Opens the uploaded receipt photo itself: Drive/public URLs as-is, API paths with the auth token. */
+const receiptPhotoHref = (photo: ReceiptPhotoStatus): string | null => {
+  const url = photo.file_url;
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  return getReceiptPhotoUrl({ id: photo.id, photo_url: url }) || null;
+};
+
+/** «إذن الاستلام» is active only when the photographed receipt (or steel scale ticket) is really stored. */
+export const getReceiptPhotoButton = (photo?: ReceiptPhotoStatus | null): DocumentButtonState => {
+  const href = photo?.has_file ? receiptPhotoHref(photo) : null;
+  if (!photo || !href) {
+    return { active: false, tooltip: 'لم تُرفع صورة إذن الاستلام (أو صورة وزن الحديد) لهذا السجل بعد' };
+  }
+  const what = photo.file_source === 'scale_ticket' ? 'صورة وزن الحديد (تذكرة الميزان)' : 'صورة إذن الاستلام';
+  return {
+    active: true,
+    tooltip: `${what} المرفوعة عند الاستلام${photo.number ? ` للإذن ${photo.number}` : ''} — اضغط لفتحها`,
+    href,
+  };
+};
+
 /** Derives both document buttons for an accounting receipt from the server's `document_status`. */
 export const getReceiptDocumentButtons = (
   receipt: ApprovedReceipt,
-  onOpenReceipt: () => void,
 ): { receipt: DocumentButtonState; invoice: DocumentButtonState } => {
   const status = receipt.document_status;
-  const receiptExists = Boolean(status?.receipt.exists && receipt.id);
-  const receiptNumber = status?.receipt.number || receipt.receipt_number;
-
-  const receiptState: DocumentButtonState = receiptExists
-    ? {
-        active: true,
-        tooltip: `إذن الاستلام ${receiptNumber} معتمد ومرتبط بالسجل${status?.receipt.has_file ? ' • صورة الإذن مرفقة' : ' • بدون صورة مرفقة'} — اضغط للمعاينة`,
-        onOpen: onOpenReceipt,
-      }
-    : { active: false, tooltip: 'لا يوجد إذن استلام مرتبط بهذا السجل' };
+  const receiptState = getReceiptPhotoButton(status?.receipt);
 
   const invoice = status?.invoice;
   let invoiceState: DocumentButtonState = {
@@ -69,14 +82,9 @@ export const getReceiptDocumentButtons = (
 export const getInvoiceDocumentButtons = (
   invoice: SupplierInvoice,
 ): { receipt: DocumentButtonState; invoice: DocumentButtonState } => {
-  const linkedReceiptId = Number(invoice.purchase_receipt?.id || 0);
   return {
-    receipt: linkedReceiptId > 0
-      ? {
-          active: true,
-          tooltip: `إذن الاستلام ${invoice.purchase_receipt?.receipt_number || ''} مرتبط بالفاتورة — اضغط للمعاينة`,
-          to: invoicesArchiveUrl({ purchase_receipt_id: String(linkedReceiptId) }),
-        }
+    receipt: invoice.purchase_receipt
+      ? getReceiptPhotoButton(invoice.receipt_photo_status)
       : { active: false, tooltip: 'لا يوجد إذن استلام مرتبط بهذه الفاتورة' },
     invoice: {
       active: true,

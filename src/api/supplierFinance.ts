@@ -73,9 +73,19 @@ export interface ApprovedReceipt {
   items?: ApprovedReceiptItem[];
 }
 
+/** Photographed receipt permission uploaded at receiving (or, for steel, the scale-ticket photo). */
+export interface ReceiptPhotoStatus {
+  exists: boolean;
+  id: number;
+  number?: string | null;
+  has_file: boolean;
+  file_url?: string | null;
+  file_source?: 'receipt_photo' | 'scale_ticket' | null;
+}
+
 /** Server-derived status of the receipt permission and supplier invoice linked to an accounting receipt. */
 export interface ReceiptDocumentStatus {
-  receipt: { exists: boolean; id: number; number?: string | null; has_file: boolean };
+  receipt: ReceiptPhotoStatus;
   invoice: {
     exists: boolean;
     has_file: boolean;
@@ -157,6 +167,7 @@ export interface SupplierInvoice {
   supplier?: المورد | null;
   purchase_order?: PurchaseOrder | null;
   purchase_receipt?: ApprovedReceipt | null;
+  receipt_photo_status?: ReceiptPhotoStatus | null;
   payment_allocations?: SupplierPaymentAllocation[];
   land_allocations?: SupplierInvoiceLandAllocation[];
   created_at?: string | null;

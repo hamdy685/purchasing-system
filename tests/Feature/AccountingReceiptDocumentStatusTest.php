@@ -10,6 +10,7 @@ use App\Models\Role;
 use App\Models\Supplier;
 use App\Models\SupplierInvoice;
 use App\Models\User;
+use App\Models\WeighingGroup;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -154,6 +155,68 @@ class AccountingReceiptDocumentStatusTest extends TestCase
         $this->assertTrue($status['invoice']['exists']);
         $this->assertTrue($status['invoice']['has_file']);
         $this->assertSame("/api/v1/purchase-orders/{$receipt->purchase_order_id}/invoice-photo", $status['invoice']['file_url']);
+    }
+
+    public function test_drive_receipt_photo_activates_receipt_with_drive_link(): void
+    {
+        $this->makeReceipt([], [
+            'photo_path' => 'https://drive.google.com/file/d/RcPt987/view',
+            'photo_drive_id' => 'RcPt987',
+        ]);
+
+        $receipt = $this->statusesFor(['status' => 'pending'])['REC-DOC-1']['receipt'];
+
+        $this->assertTrue($receipt['has_file']);
+        $this->assertSame('receipt_photo', $receipt['file_source']);
+        $this->assertSame('https://drive.google.com/file/d/RcPt987/view', $receipt['file_url']);
+    }
+
+    public function test_receipt_without_uploaded_photo_is_inactive_even_though_record_exists(): void
+    {
+        $this->makeReceipt([], ['photo_path' => 'receipts/deleted_after_redeploy.jpg']);
+
+        $receipt = $this->statusesFor(['status' => 'pending'])['REC-DOC-1']['receipt'];
+
+        $this->assertTrue($receipt['exists']);
+        $this->assertFalse($receipt['has_file']);
+        $this->assertNull($receipt['file_url']);
+        $this->assertNull($receipt['file_source']);
+    }
+
+    public function test_steel_scale_ticket_photo_is_used_when_receipt_has_no_photo(): void
+    {
+        $receipt = $this->makeReceipt();
+        $group = WeighingGroup::create([
+            'group_number' => 'WG-DOC-1',
+            'purchase_order_id' => $receipt->purchase_order_id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'RECEIVED',
+            'scale_ticket_photo' => 'https://drive.google.com/file/d/ScAlE55/view',
+        ]);
+        $receipt->update(['weighing_group_id' => $group->id]);
+
+        $photo = $this->statusesFor(['status' => 'pending'])['REC-DOC-1']['receipt'];
+
+        $this->assertTrue($photo['has_file']);
+        $this->assertSame('scale_ticket', $photo['file_source']);
+        $this->assertSame('https://drive.google.com/file/d/ScAlE55/view', $photo['file_url']);
+    }
+
+    public function test_invoices_list_carries_linked_receipt_photo_status(): void
+    {
+        $withPhoto = $this->makeReceipt([], ['photo_path' => 'https://drive.google.com/file/d/InvRc1/view', 'photo_drive_id' => 'InvRc1']);
+        $this->makeInvoice($withPhoto, 'INV-PHOTO');
+        $withoutPhoto = $this->makeReceipt();
+        $this->makeInvoice($withoutPhoto, 'INV-NOPHOTO');
+
+        $rows = collect($this->actingAs($this->siteAccountant, 'sanctum')
+            ->getJson('/api/v1/accounting/invoices')
+            ->assertOk()
+            ->json('data'))->keyBy('invoice_number');
+
+        $this->assertTrue($rows['INV-PHOTO']['receipt_photo_status']['has_file']);
+        $this->assertSame('https://drive.google.com/file/d/InvRc1/view', $rows['INV-PHOTO']['receipt_photo_status']['file_url']);
+        $this->assertFalse($rows['INV-NOPHOTO']['receipt_photo_status']['has_file']);
     }
 
     public function test_drive_invoice_reference_counts_as_stored_file(): void

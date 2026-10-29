@@ -165,6 +165,7 @@ class SupplierInvoiceService
             'items.purchaseOrderItem.item',
             'items.purchaseOrderItem.supplier',
             'items.purchaseOrderItem.prItem.supplier',
+            'weighingGroup:id,scale_ticket_photo',
             'supplierInvoices' => fn ($q) => $q->whereNotIn('status', ['VOIDED', 'CANCELLED'])
                 ->select(['id', 'purchase_receipt_id', 'invoice_number', 'status', 'matching_status'])
                 ->orderBy('id'),
@@ -220,12 +221,7 @@ class SupplierInvoiceService
         $hasInvoiceFile = $po && StorageService::hasStoredFile($po->invoice_photo_path, $po->invoice_photo_drive_id);
 
         return [
-            'receipt' => [
-                'exists' => (bool) $receipt->exists,
-                'id' => $receipt->id,
-                'number' => $receipt->receipt_number,
-                'has_file' => StorageService::hasStoredFile($receipt->photo_path, $receipt->photo_drive_id),
-            ],
+            'receipt' => $this->receiptPhotoStatus($receipt),
             'invoice' => [
                 'exists' => $hasInvoiceFile || $invoices->isNotEmpty(),
                 'has_file' => $hasInvoiceFile,
@@ -242,12 +238,43 @@ class SupplierInvoiceService
         ];
     }
 
+    /**
+     * The photographed receipt permission uploaded at receiving (warehouse keeper / site engineer,
+     * Drive «أذونات الاستلام»); for steel, falls back to the weighing group's scale-ticket photo.
+     * Needs `weighingGroup` eager-loaded to stay query-free.
+     */
+    public function receiptPhotoStatus(PurchaseReceipt $receipt): array
+    {
+        $source = null;
+        $fileUrl = null;
+
+        if (StorageService::hasStoredFile($receipt->photo_path, $receipt->photo_drive_id)) {
+            $source = 'receipt_photo';
+            $fileUrl = $receipt->photo_url;
+        } else {
+            $scalePhoto = $receipt->relationLoaded('weighingGroup') ? $receipt->weighingGroup?->scale_ticket_photo : null;
+            if (StorageService::hasStoredFile($scalePhoto)) {
+                $source = 'scale_ticket';
+                $fileUrl = StorageService::url($scalePhoto);
+            }
+        }
+
+        return [
+            'exists' => (bool) $receipt->exists,
+            'id' => $receipt->id,
+            'number' => $receipt->receipt_number,
+            'has_file' => $fileUrl !== null,
+            'file_url' => $fileUrl,
+            'file_source' => $source,
+        ];
+    }
+
     public function invoices(?int $supplierId = null, int $limit = 200, ?User $user = null)
     {
         return SupplierInvoice::with([
             'supplier',
             'purchaseOrder.purchaseRequest.department',
-            'purchaseReceipt',
+            'purchaseReceipt.weighingGroup:id,scale_ticket_photo',
             'paymentAllocations.payment',
             'landAllocations.parcel',
             'journalEntry.lines.account',
@@ -261,7 +288,11 @@ class SupplierInvoiceService
             ->orderByDesc('invoice_date')
             ->orderByDesc('id')
             ->limit($limit)
-            ->get();
+            ->get()
+            ->each(fn (SupplierInvoice $invoice) => $invoice->setAttribute(
+                'receipt_photo_status',
+                $invoice->purchaseReceipt ? $this->receiptPhotoStatus($invoice->purchaseReceipt) : null
+            ));
     }
 
     public function createInvoice(
