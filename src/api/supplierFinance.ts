@@ -69,7 +69,21 @@ export interface ApprovedReceipt {
   purchase_request?: PurchaseOrder['purchase_request'] | null;
   invoice_photo_url?: string | null;
   has_invoice_attachment?: boolean;
+  document_status?: ReceiptDocumentStatus;
   items?: ApprovedReceiptItem[];
+}
+
+/** Server-derived status of the receipt permission and supplier invoice linked to an accounting receipt. */
+export interface ReceiptDocumentStatus {
+  receipt: { exists: boolean; id: number; number?: string | null; has_file: boolean };
+  invoice: {
+    exists: boolean;
+    has_file: boolean;
+    file_url?: string | null;
+    po_number?: string | null;
+    count: number;
+    invoices: Array<{ id: number; invoice_number?: string | null; status?: string | null; matching_status?: string | null }>;
+  };
 }
 
 export type SupplierInvoiceStatus = 'DRAFT' | 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | string;

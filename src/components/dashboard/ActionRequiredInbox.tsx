@@ -88,6 +88,8 @@ export interface ActionInboxItem {
   directRejectLabel?: string;
   directRejectClassName?: string;
   requireApproveModal?: boolean;
+  /** Optional document-status row (e.g. «إذن الاستلام» / «الفاتورة») rendered above the card actions. */
+  documentSlot?: React.ReactNode;
   stageBadge?: {
     text: string;
     icon?: string;
@@ -1110,6 +1112,8 @@ export const ActionRequiredInbox: React.FC<ActionRequiredInboxProps> = ({
 
                   {/* Actions Toolbar on the Card */}
                   <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                    {item.documentSlot}
+
                     {/* Top Action Row: Direct Approve & Direct Reject (if provided) */}
                     {(item.onDirectApprove || item.onDirectReject || item.onDirectSubmit) && (
                       <div className={`flex items-center gap-2 ${(directApprovingId || isSubmitting) ? 'pointer-events-none opacity-60' : ''}`}>

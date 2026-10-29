@@ -245,6 +245,32 @@ class StorageService
     }
 
     /**
+     * Whether a stored path really points at a file under the current storage mechanism.
+     * Google Drive ids / web URLs are what a successful upload records (uploads throw on failure),
+     * so they count as stored; a bare disk path must actually exist on the active or public disk.
+     */
+    public static function hasStoredFile(?string $path, ?string $driveId = null): bool
+    {
+        if (! $path) {
+            return false;
+        }
+
+        if ($driveId || GoogleDriveService::extractFileId($path) || filter_var($path, FILTER_VALIDATE_URL)) {
+            return true;
+        }
+
+        foreach (array_unique([self::disk(), 'public']) as $disk) {
+            try {
+                if (Storage::disk($disk)->exists($path)) {
+                    return true;
+                }
+            } catch (\Throwable) {}
+        }
+
+        return false;
+    }
+
+    /**
      * Stream or download a file from any configured disk or Google Drive.
      */
     public static function streamResponse(

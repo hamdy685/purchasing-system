@@ -165,6 +165,9 @@ class SupplierInvoiceService
             'items.purchaseOrderItem.item',
             'items.purchaseOrderItem.supplier',
             'items.purchaseOrderItem.prItem.supplier',
+            'supplierInvoices' => fn ($q) => $q->whereNotIn('status', ['VOIDED', 'CANCELLED'])
+                ->select(['id', 'purchase_receipt_id', 'invoice_number', 'status', 'matching_status'])
+                ->orderBy('id'),
         ])
             ->where('status', 'APPROVED')
             ->where(function ($query) {
@@ -202,7 +205,41 @@ class SupplierInvoiceService
             })
             ->orderByDesc('site_engineer_approved_at')
             ->limit($limit)
-            ->get();
+            ->get()
+            ->each(fn (PurchaseReceipt $receipt) => $receipt->setAttribute('document_status', $this->receiptDocumentStatus($receipt)));
+    }
+
+    /**
+     * Receipt-permission / supplier-invoice document status for one accounting receipt,
+     * derived from the already eager-loaded relations (no extra queries per row).
+     */
+    public function receiptDocumentStatus(PurchaseReceipt $receipt): array
+    {
+        $po = $receipt->purchaseOrder;
+        $invoices = $receipt->relationLoaded('supplierInvoices') ? $receipt->supplierInvoices : collect();
+        $hasInvoiceFile = $po && StorageService::hasStoredFile($po->invoice_photo_path, $po->invoice_photo_drive_id);
+
+        return [
+            'receipt' => [
+                'exists' => (bool) $receipt->exists,
+                'id' => $receipt->id,
+                'number' => $receipt->receipt_number,
+                'has_file' => StorageService::hasStoredFile($receipt->photo_path, $receipt->photo_drive_id),
+            ],
+            'invoice' => [
+                'exists' => $hasInvoiceFile || $invoices->isNotEmpty(),
+                'has_file' => $hasInvoiceFile,
+                'file_url' => $hasInvoiceFile ? $po->invoice_photo_url : null,
+                'po_number' => $po?->po_number,
+                'count' => $invoices->count(),
+                'invoices' => $invoices->map(fn (SupplierInvoice $invoice) => [
+                    'id' => $invoice->id,
+                    'invoice_number' => $invoice->invoice_number,
+                    'status' => $invoice->status,
+                    'matching_status' => $invoice->matching_status,
+                ])->values()->all(),
+            ],
+        ];
     }
 
     public function invoices(?int $supplierId = null, int $limit = 200, ?User $user = null)

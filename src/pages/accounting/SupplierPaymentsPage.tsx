@@ -224,6 +224,15 @@ export const SupplierPaymentsPage: React.FC = () => {
 
   useEffect(() => { void load(); }, [searchParams.get('purchase_receipt_id'), searchParams.get('action')]);
 
+  // Deep link from the dashboard «الفاتورة» button: narrow the invoices archive to the linked invoice(s).
+  useEffect(() => {
+    const invoiceNumber = searchParams.get('invoice_number');
+    const invoicePo = searchParams.get('invoice_po');
+    if (invoiceNumber || invoicePo) {
+      setInvoiceFilters(current => ({ ...current, invoice: invoiceNumber || '', po: invoicePo || '' }));
+    }
+  }, [searchParams.get('invoice_number'), searchParams.get('invoice_po')]);
+
   const contains = (value: unknown, filter: string) => !filter || String(value ?? '').toLocaleLowerCase('ar-EG').includes(filter.toLocaleLowerCase('ar-EG'));
   const receiptHasNonDateSearch = Boolean(receiptFilters.receipt || receiptFilters.po || receiptFilters.supplier || receiptFilters.department || receiptFilters.value || receiptFilters.action);
   const invoiceHasNonDateSearch = Boolean(invoiceFilters.invoice || invoiceFilters.supplier || invoiceFilters.po || invoiceFilters.dueDate || invoiceFilters.action);

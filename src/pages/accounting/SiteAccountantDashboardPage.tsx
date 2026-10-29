@@ -28,6 +28,7 @@ import { getUnitLabel } from '../../utils/units';
 import { formatCleanNumber } from '../../utils/numberFormat';
 import ThreeWayMatchPrintModal from '../../components/accounting/ThreeWayMatchPrintModal';
 import { InvoiceRegistrationModal } from '../../components/accounting/InvoiceRegistrationModal';
+import { DocumentStatusButtons, getInvoiceDocumentButtons, getReceiptDocumentButtons } from '../../components/accounting/DocumentStatusButtons';
 import { shareReceiptOnWhatsApp } from '../../utils/whatsapp';
 import { getSummaryParcels, getSummaryRegions, getSummaryQuantities, getItemsSummaryDisplay } from '../../utils/formatRequestSummary';
 import { formatDateTime24h } from '../../utils/dateTime';
@@ -304,6 +305,7 @@ export const SiteAccountantDashboardPage: React.FC = () => {
         onPreviewReceipt: () => {
           setSelectedCycleReceipt(receipt);
         },
+        documentSlot: <DocumentStatusButtons {...getReceiptDocumentButtons(receipt, () => setSelectedCycleReceipt(receipt))} />,
       });
     }
 
@@ -323,6 +325,7 @@ export const SiteAccountantDashboardPage: React.FC = () => {
         reason: 'فاتورة مورد تم إدخالها وتتطلب تنفيذ المطابقة الثلاثية لإرسالها للصرف المالي.',
         actionUrl: '/accounting/supplier-finance?tab=payments',
         actionLabel: 'تنفيذ المطابقة',
+        documentSlot: <DocumentStatusButtons {...getInvoiceDocumentButtons(invoice)} />,
         timeAgo: invoice.purchase_order?.purchase_request?.created_at ? formatDateTime24h(invoice.purchase_order.purchase_request.created_at) : (invoice.created_at ? formatDateTime24h(invoice.created_at) : cleanDate(invoice.created_at || invoice.invoice_date)),
         created_at: (invoice.purchase_order?.purchase_request?.created_at || invoice.created_at || invoice.invoice_date) ?? undefined,
       });
@@ -693,33 +696,9 @@ export const SiteAccountantDashboardPage: React.FC = () => {
                                 👁️ عرض / 🖨️ طباعة
                               </Button>
 
-                              {/* 2. زر الفاتورة: أصفر إذا توفرت ورمادي إذا لم تتوفر */}
-                              {(() => {
-                                const poInvoiceUrl = receipt.invoice_photo_url || receipt.purchase_order?.invoice_photo_url;
-                                const hasInvoice = Boolean(receipt.has_invoice_attachment || receipt.purchase_order?.has_invoice_attachment || poInvoiceUrl);
-                                return hasInvoice && poInvoiceUrl ? (
-                                  <a
-                                    href={poInvoiceUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-[11px] font-black bg-amber-500 hover:bg-amber-400 text-amber-950 border border-amber-400 shadow-sm transition-all whitespace-nowrap active:scale-95 cursor-pointer"
-                                    title="استعراض فاتورة المورد المرفوعة على Google Drive بمجلد «فواتير»"
-                                  >
-                                    <span>🧾</span>
-                                    <span>الفاتورة</span>
-                                  </a>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    disabled
-                                    className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-[11px] font-bold bg-slate-800 text-slate-500 border border-slate-700/60 cursor-not-allowed select-none whitespace-nowrap opacity-60"
-                                    title="لا توجد فاتورة مرفقة لهذا الطلب"
-                                  >
-                                    <span className="opacity-40">🧾</span>
-                                    <span>الفاتورة</span>
-                                  </button>
-                                );
-                              })()}
+                              {/* 2. زرّا حالة المستندات: إذن الاستلام والفاتورة (أخضر إذا توفر ورمادي إذا لم يتوفر) */}
+                              <DocumentStatusButtons {...getReceiptDocumentButtons(receipt, () => setSelectedCycleReceipt(receipt))} />
+
 
                               {/* 2. إرسال عبر واتساب */}
                               <Button
