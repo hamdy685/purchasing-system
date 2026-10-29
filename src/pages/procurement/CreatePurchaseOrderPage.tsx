@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { getApprovedPurchaseRequestApi } from '../../api/procurement';
 import { getSuppliersApi } from '../../api/suppliers';
-import { createPurchaseOrderApi, createBatchPurchaseOrdersApi, submitPurchaseOrderApi } from '../../api/purchaseOrders';
-import { المورد } from '../../types/purchaseOrder';
+import { createPurchaseOrderApi, createBatchPurchaseOrdersApi, submitPurchaseOrderApi, createConsolidatedPurchaseOrdersApi, previewConsolidatedPurchaseOrdersApi } from '../../api/purchaseOrders';
+import { المورد, ConsolidatedPoPreview, PurchaseOrderGroupPayload } from '../../types/purchaseOrder';
 import { PurchaseRequest } from '../../types/purchaseRequest';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorMessage from '../../components/ErrorMessage';
@@ -82,6 +82,13 @@ export const CreatePurchaseOrderPage: React.FC = () => {
   const [isDirectPoModalOpen, setIsDirectPoModalOpen] = useState<boolean>(false);
   const [isSupplementModalOpen, setIsSupplementModalOpen] = useState<boolean>(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
+  // Mandatory department consolidation: the server decides the orders (one per supplier and scope).
+  const consolidatedRequired = Boolean(pr?.consolidated_po_required);
+  const [consolidationPreview, setConsolidationPreview] = useState<ConsolidatedPoPreview[] | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState<boolean>(false);
+  // One key per issue attempt, so a double submit or a retry never issues the orders twice.
+  const issueKeyRef = useRef<string | null>(null);
 
   const pendingSupplement = useMemo(() => {
     return Array.isArray(pr?.supplements)
@@ -572,6 +579,80 @@ export const CreatePurchaseOrderPage: React.FC = () => {
     };
   }, [supplierId, effectiveSupplierId, poItems, resolvedGroups, notes, pr, prId, supplierDisplayName]);
 
+  const buildGroupsPayload = (groups: typeof resolvedGroups, finalSupplierId: string): PurchaseOrderGroupPayload[] =>
+    groups.map((g) => ({
+      group_name: g.name,
+      group_type: (g.group_type || 'NONE') as 'SHARED_SHIPMENT' | 'STEEL_WEIGHING' | 'NONE',
+      supplier_id: g.items[0]?.supplier_id || (finalSupplierId ? Number(finalSupplierId) : undefined),
+      payment_terms: paymentTerms || undefined,
+      delivery_date: deliveryDate || undefined,
+      notes: notes || undefined,
+      items: g.items.map((item) => ({
+        pr_item_id: item.pr_item_id,
+        item_id: item.item_id,
+        item_description: item.item_description,
+        item_reference: item.item_reference,
+        region: item.region,
+        quantity: Number(item.quantity) || 1,
+        uom: item.uom,
+        unit_price: Number(item.unit_price) || 0,
+        specifications: item.specifications,
+        supplier_id: item.supplier_id || (finalSupplierId ? Number(finalSupplierId) : undefined),
+      })),
+    }));
+
+  // The "one combined order for everything" mode does not exist for consolidating departments.
+  useEffect(() => {
+    if (consolidatedRequired && orderMode !== 'SEPARATE_DEFAULT') {
+      setOrderMode('SEPARATE_DEFAULT');
+    }
+  }, [consolidatedRequired, orderMode]);
+
+  // Live preview of the consolidated orders the server will issue for the current form.
+  useEffect(() => {
+    if (!consolidatedRequired || !prId) {
+      setConsolidationPreview(null);
+      setPreviewError(null);
+      return;
+    }
+    const finalSupplierId = supplierId || effectiveSupplierId;
+    const groups = resolvedGroups.filter((g) => g.items.length > 0);
+    if (groups.length === 0) {
+      setConsolidationPreview([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setPreviewLoading(true);
+      previewConsolidatedPurchaseOrdersApi({
+        purchase_request_id: prId,
+        supplier_id: finalSupplierId ? Number(finalSupplierId) : undefined,
+        one_time_supplier_name: oneTimeSupplierName.trim() || undefined,
+        groups: buildGroupsPayload(groups, finalSupplierId),
+      })
+        .then((orders) => {
+          if (cancelled) return;
+          setConsolidationPreview(orders);
+          setPreviewError(null);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setConsolidationPreview(null);
+          setPreviewError(parseApiError(err).message);
+        })
+        .finally(() => {
+          if (!cancelled) setPreviewLoading(false);
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [consolidatedRequired, prId, resolvedGroups, supplierId, effectiveSupplierId, oneTimeSupplierName]);
+
+  const consolidatedOrderCount = consolidationPreview?.length ?? 0;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!prId) {
@@ -600,6 +681,17 @@ export const CreatePurchaseOrderPage: React.FC = () => {
       return;
     }
 
+    if (consolidatedRequired) {
+      if (previewError) {
+        setError(previewError);
+        return;
+      }
+      if (previewLoading || !consolidationPreview || consolidationPreview.length === 0) {
+        setError('جاري تجهيز معاينة أوامر الشراء المجمعة، انتظر لحظة ثم أعد المحاولة.');
+        return;
+      }
+    }
+
     setError(null);
     setIsConfirmModalOpen(true);
   };
@@ -613,6 +705,38 @@ export const CreatePurchaseOrderPage: React.FC = () => {
     const finalGroups = resolvedGroups.filter((g) => g.items.length > 0);
 
     try {
+      if (consolidatedRequired) {
+        issueKeyRef.current ??= typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `po-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+
+        const result = await createConsolidatedPurchaseOrdersApi({
+          purchase_request_id: prId,
+          supplier_id: finalSupplierId ? Number(finalSupplierId) : undefined,
+          one_time_supplier_name: oneTimeSupplierName.trim() || undefined,
+          payment_terms: paymentTerms || undefined,
+          delivery_date: deliveryDate || undefined,
+          budget_code: budgetCode || undefined,
+          notes: notes || undefined,
+          manual_po_number: manualPoNumber.trim() || undefined,
+          manual_pr_number: manualPrNumber.trim() || undefined,
+          groups: buildGroupsPayload(finalGroups, finalSupplierId),
+          idempotency_key: issueKeyRef.current,
+        });
+        issueKeyRef.current = null;
+
+        const numbers = result.orders.map((po) => `#${po.po_number}`).join('، ');
+        const returnUrl = searchParams.get('returnUrl') || (location.state as { returnTo?: string })?.returnTo || '/procurement';
+        navigate(returnUrl, {
+          state: {
+            successMessage: result.replayed
+              ? `أوامر الشراء المجمعة لهذا الطلب صادرة بالفعل: ${numbers}.`
+              : `تم إصدار ${result.orders.length} أمر شراء مجمع (أمر لكل مورد): ${numbers}.`,
+          },
+        });
+        return;
+      }
+
       if (finalGroups.length === 1 && orderMode === 'COMBINED_SINGLE') {
         const po = await createPurchaseOrderApi({
           purchase_request_id: prId,
@@ -649,26 +773,7 @@ export const CreatePurchaseOrderPage: React.FC = () => {
           },
         });
       } else {
-        const groupsPayload = finalGroups.map((g) => ({
-          group_name: g.name,
-          group_type: (g.group_type || 'NONE') as 'SHARED_SHIPMENT' | 'STEEL_WEIGHING' | 'NONE',
-          supplier_id: g.items[0]?.supplier_id || (finalSupplierId ? Number(finalSupplierId) : undefined),
-          payment_terms: paymentTerms || undefined,
-          delivery_date: deliveryDate || undefined,
-          notes: notes || undefined,
-          items: g.items.map((item) => ({
-            pr_item_id: item.pr_item_id,
-            item_id: item.item_id,
-            item_description: item.item_description,
-            item_reference: item.item_reference,
-            region: item.region,
-            quantity: Number(item.quantity) || 1,
-            uom: item.uom,
-            unit_price: Number(item.unit_price) || 0,
-            specifications: item.specifications,
-            supplier_id: item.supplier_id || (finalSupplierId ? Number(finalSupplierId) : undefined),
-          })),
-        }));
+        const groupsPayload = buildGroupsPayload(finalGroups, finalSupplierId);
 
         await createBatchPurchaseOrdersApi({
           purchase_request_id: prId,
@@ -1128,7 +1233,15 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Mode switch */}
+              {/* Mode switch (not offered when the department's orders are consolidated by the server) */}
+              {consolidatedRequired ? (
+                <span
+                  data-testid="consolidated-po-badge"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-950/60 border border-emerald-700/60 px-3 py-1.5 text-xs font-bold text-emerald-300 shrink-0"
+                >
+                  🧾 أمر شراء مجمع إلزامي لهذا القسم (أمر لكل مورد)
+                </span>
+              ) : (
               <div className="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800 text-xs shrink-0">
                 <button
                   type="button"
@@ -1153,6 +1266,7 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                   📦 أمر شراء مجمع للكل
                 </button>
               </div>
+              )}
             </div>
 
             {orderMode === 'SEPARATE_DEFAULT' && (
@@ -1601,7 +1715,57 @@ export const CreatePurchaseOrderPage: React.FC = () => {
               </div>
             </div>
 
+            {consolidatedRequired && (
+              <div data-testid="consolidated-po-preview" className="rounded-xl border border-emerald-800/60 bg-slate-900/90 p-4 space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                    <span>🧾</span>
+                    <span>أوامر الشراء المجمعة التي سيصدرها النظام (أمر لكل مورد وقطعة/منطقة):</span>
+                  </div>
+                  <span className="text-xs font-mono font-black text-emerald-300 bg-emerald-950 border border-emerald-800 px-2.5 py-0.5 rounded-full">
+                    {previewLoading ? 'جاري الحساب...' : `إجمالي: ${consolidatedOrderCount} أمر شراء مجمع`}
+                  </span>
+                </div>
+                {previewError ? (
+                  <p role="alert" className="text-xs font-bold text-rose-300 bg-rose-950/40 border border-rose-800/60 rounded-lg p-2.5">
+                    {previewError}
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 text-xs">
+                    {(consolidationPreview ?? []).map((order, oIdx) => (
+                      <div key={`${order.supplier_id}-${order.item_reference}-${order.region}-${oIdx}`} data-testid="consolidated-po-card" className="rounded-lg border border-slate-800 bg-slate-950 p-2.5 space-y-1.5 text-slate-200">
+                        <div className="flex items-center justify-between gap-2 font-bold text-[11px]">
+                          <span>أمر {oIdx + 1}: {order.supplier_name || `مورد #${order.supplier_id}`}</span>
+                          <span className="text-slate-400 font-normal">{order.item_reference} — {order.region}</span>
+                        </div>
+                        <ul className="space-y-0.5">
+                          {order.lines.map((line, lIdx) => (
+                            <li key={lIdx} className="flex items-center justify-between gap-2">
+                              <span>
+                                {line.item_description}
+                                {line.source_pr_item_ids.length > 1 && (
+                                  <span className="mr-1 text-emerald-400">(مجمع من {line.source_pr_item_ids.length} بنود)</span>
+                                )}
+                              </span>
+                              <span className="font-mono text-slate-300">
+                                {formatCleanQty(line.quantity)} {getUnitLabel(line.uom)} × {formatCleanNumber(line.unit_price)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="flex items-center justify-between border-t border-slate-800 pt-1.5 font-bold">
+                          <span className="text-slate-400">إجمالي الأمر قبل الخصم والضريبة</span>
+                          <span className="font-mono text-emerald-300">{formatCleanNumber(order.subtotal)} ج.م</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Purchase Orders Batch Issuance Summary */}
+            {!consolidatedRequired && (
             <div className="rounded-xl border border-cyan-800/50 bg-slate-900/90 p-4 space-y-2.5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
@@ -1633,6 +1797,7 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                 ))}
               </div>
             </div>
+            )}
           </div>
 
           {/* Form الإجراءات */}
@@ -1678,11 +1843,11 @@ export const CreatePurchaseOrderPage: React.FC = () => {
               </button>
               <button
                 type="submit"
-                disabled={loading || !hasSupplier || !prId}
+                disabled={loading || !hasSupplier || !prId || (consolidatedRequired && (previewLoading || Boolean(previewError)))}
                 className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs px-6 py-2.5 rounded-lg font-bold shadow-lg shadow-cyan-600/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
                 title={!hasSupplier ? 'يرجى تحديد المورد المعتمد لتفعيل زر الإصدار' : undefined}
               >
-                {loading ? 'جاري إصدار وإرسال أوامر الشراء...' : resolvedGroups.length > 1 ? `إصدار وإرسال (${resolvedGroups.length}) أمر شراء للاستلام ←` : 'إصدار وإرسال أمر الشراء للاستلام ←'}
+                {loading ? 'جاري إصدار وإرسال أوامر الشراء...' : consolidatedRequired ? `إصدار وإرسال (${consolidatedOrderCount}) أمر شراء مجمع للاستلام ←` : resolvedGroups.length > 1 ? `إصدار وإرسال (${resolvedGroups.length}) أمر شراء للاستلام ←` : 'إصدار وإرسال أمر الشراء للاستلام ←'}
               </button>
             </div>
           </div>
@@ -1733,7 +1898,7 @@ export const CreatePurchaseOrderPage: React.FC = () => {
         isLoading={loading}
         title="مراجعة وتأكيد إصدار أمر الشراء"
         subtitle={`طلب شراء رقم ${confirmationData.documentCode}`}
-        confirmLabel={resolvedGroups.length > 1 ? `حسناً، إصدار (${resolvedGroups.length}) أوامر شراء` : 'حسناً، إصدار أمر الشراء'}
+        confirmLabel={consolidatedRequired ? `حسناً، إصدار (${consolidatedOrderCount}) أمر شراء مجمع` : resolvedGroups.length > 1 ? `حسناً، إصدار (${resolvedGroups.length}) أوامر شراء` : 'حسناً، إصدار أمر الشراء'}
         cancelLabel="رجوع للتعديل"
         confirmVariant="primary"
         documentType="PURCHASE_ORDER"

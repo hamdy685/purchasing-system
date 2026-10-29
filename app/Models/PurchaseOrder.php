@@ -22,6 +22,17 @@ class PurchaseOrder extends Model
                 $model->po_number = app(\App\Services\PurchaseOrderService::class)->generatePoNumber();
             }
         });
+
+        // A PO that stops holding its request lines frees them to be ordered again (history kept).
+        static::updated(function (PurchaseOrder $model) {
+            if ($model->wasChanged('status') && in_array($model->status, \App\Services\PurchaseOrderSourceService::INACTIVE_PO_STATUSES, true)) {
+                \App\Services\DepartmentPoConsolidationService::releaseForOrder($model, "PO {$model->status}");
+            }
+        });
+
+        static::deleted(function (PurchaseOrder $model) {
+            \App\Services\DepartmentPoConsolidationService::releaseForOrder($model, 'PO deleted');
+        });
     }
 
     protected $table = 'purchase_orders';
@@ -64,7 +75,18 @@ class PurchaseOrder extends Model
         'invoice_photo_drive_id',
         'invoice_photo_uploaded_at',
         'invoice_photo_uploaded_by_user_id',
+        // Mandatory department consolidation (see config procurement.consolidated_po)
+        'consolidation_policy',
+        'consolidation_key',
+        'idempotency_key',
+        // Actual PO above the high-value threshold (config procurement.actual_po_high_value_threshold)
+        'high_value_reason',
+        'high_value_threshold',
+        'high_value_acknowledged_by_user_id',
+        'high_value_acknowledged_at',
     ];
+
+    public const CONSOLIDATION_POLICY_DEPARTMENT = 'DEPARTMENT_MANDATORY';
 
     protected $appends = [
         'warehouse_approval',
@@ -202,6 +224,8 @@ class PurchaseOrder extends Model
             'actual_delivery_date' => 'date',
             'reviewed_at_accounting' => 'datetime',
             'finalized_at' => 'datetime',
+            'high_value_threshold' => 'decimal:2',
+            'high_value_acknowledged_at' => 'datetime',
             'invoice_photo_uploaded_at' => 'datetime',
         ];
     }
@@ -257,6 +281,11 @@ class PurchaseOrder extends Model
     public function items(): HasMany
     {
         return $this->hasMany(PurchaseOrderItem::class, 'purchase_order_id');
+    }
+
+    public function isDepartmentConsolidated(): bool
+    {
+        return $this->consolidation_policy === self::CONSOLIDATION_POLICY_DEPARTMENT;
     }
 
     public function receipts(): HasMany

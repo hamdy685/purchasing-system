@@ -37,6 +37,8 @@ class CreatePurchaseOrderRequest extends FormRequest
             'items.*.specifications' => ['nullable', 'string'],
             'items.*.change_reason' => ['nullable', 'string'],
             'items.*.supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
+            // Client-generated per issue attempt; a retry with the same key returns the orders already issued.
+            'idempotency_key' => ['nullable', 'string', 'regex:/^[A-Za-z0-9-]{8,48}$/'],
             'groups' => ['nullable', 'array'],
             'groups.*.group_name' => ['nullable', 'string', 'max:150'],
             'groups.*.group_type' => ['nullable', 'string', 'in:SHARED_SHIPMENT,STEEL_WEIGHING,NONE'],

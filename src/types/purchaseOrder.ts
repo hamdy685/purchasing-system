@@ -106,6 +106,20 @@ export interface PurchaseOrderItem {
       status: string;
     } | null;
   } | null;
+  /** Request lines a department-consolidated line stands for (reference only, never summed with the line). */
+  sources?: PurchaseOrderItemSource[];
+}
+
+export interface PurchaseOrderItemSource {
+  id: number;
+  purchase_request_id: number;
+  purchase_request_item_id: number;
+  item_description?: string | null;
+  source_quantity: string;
+  source_uom: string;
+  line_quantity: string;
+  line_amount: string;
+  is_active: boolean;
 }
 
 
@@ -236,6 +250,12 @@ export interface PurchaseOrder {
   finalized_by_user_id?: number | null;
   finalized_at?: string | null;
   finalization_notes?: string | null;
+  consolidation_policy?: string | null;
+  is_department_consolidated?: boolean;
+  high_value_reason?: string | null;
+  high_value_threshold?: number | null;
+  high_value_acknowledged_by_user_id?: number | null;
+  high_value_acknowledged_at?: string | null;
   finalized_by?: {
     id: number;
     name: string;
@@ -355,6 +375,8 @@ export interface PurchaseOrderPayload {
     is_discount_applied?: boolean;
   }>;
   groups?: PurchaseOrderGroupPayload[];
+  /** One per issue attempt: a retry with the same key returns the orders already issued. */
+  idempotency_key?: string;
 }
 
 export interface PurchaseOrderGroupPayload {
@@ -419,4 +441,27 @@ export interface FinalizeActualPoPayload {
   invoice_file?: File | null;
   invoice_photo?: string | null;
   invoice_photo_name?: string | null;
+  /** Several invoice files/photos; the first is the main invoice document. */
+  attachments?: File[];
+  /** Required when the Actual PO grand total is above the high-value threshold. */
+  high_value_reason?: string;
+}
+
+/** One consolidated PO the server would issue (consolidation preview). */
+export interface ConsolidatedPoPreview {
+  supplier_id: number;
+  supplier_name?: string | null;
+  item_reference: string;
+  region: string;
+  subtotal: number;
+  lines: Array<{
+    item_id?: number | null;
+    item_description: string;
+    quantity: number;
+    uom: string;
+    unit_price: number;
+    line_total: number;
+    specifications?: string | null;
+    source_pr_item_ids: number[];
+  }>;
 }

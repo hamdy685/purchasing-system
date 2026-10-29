@@ -101,6 +101,12 @@ class PurchaseOrderResource extends JsonResource
             'finalized_by_user_id' => $this->finalized_by_user_id,
             'finalized_at' => $this->finalized_at ? $this->finalized_at->toIso8601String() : null,
             'finalization_notes' => $this->finalization_notes,
+            'consolidation_policy' => $this->consolidation_policy,
+            'is_department_consolidated' => $this->isDepartmentConsolidated(),
+            'high_value_reason' => $this->high_value_reason,
+            'high_value_threshold' => $this->high_value_threshold !== null ? (float) $this->high_value_threshold : null,
+            'high_value_acknowledged_by_user_id' => $this->high_value_acknowledged_by_user_id,
+            'high_value_acknowledged_at' => $this->high_value_acknowledged_at ? $this->high_value_acknowledged_at->toIso8601String() : null,
             'finalized_by' => $this->whenLoaded('finalizedBy', function () {
                 return $this->finalizedBy ? [
                     'id' => $this->finalizedBy->id,

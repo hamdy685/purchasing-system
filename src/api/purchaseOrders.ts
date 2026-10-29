@@ -1,5 +1,5 @@
 import apiClient, { cachedGetData, invalidateCachedGet } from './client';
-import { PurchaseOrder, PurchaseOrderItemPayload, PurchaseOrderPayload, FinalizeActualPoPayload } from '../types/purchaseOrder';
+import { PurchaseOrder, PurchaseOrderItemPayload, PurchaseOrderPayload, FinalizeActualPoPayload, ConsolidatedPoPreview } from '../types/purchaseOrder';
 
 const base = '/procurement/purchase-orders';
 
@@ -54,6 +54,21 @@ export const createBatchPurchaseOrdersApi = async (p: PurchaseOrderPayload) => {
   return response.data.data;
 };
 
+/** Orders the server would issue for a department-consolidated request (nothing is saved). */
+export const previewConsolidatedPurchaseOrdersApi = async (p: PurchaseOrderPayload): Promise<ConsolidatedPoPreview[]> => {
+  const response = await apiClient.post<{ consolidated: boolean; data: ConsolidatedPoPreview[] }>(`${base}/consolidation-preview`, p);
+  return response.data.data;
+};
+
+/** Issue a department-consolidated request: one PO per supplier and scope, decided by the server. */
+export const createConsolidatedPurchaseOrdersApi = async (
+  p: PurchaseOrderPayload
+): Promise<{ orders: PurchaseOrder[]; replayed: boolean; message: string }> => {
+  const response = await apiClient.post<{ message: string; replayed?: boolean; data: PurchaseOrder[] }>(`${base}/batch`, p);
+  invalidateCachedGet(base);
+  return { orders: response.data.data, replayed: Boolean(response.data.replayed), message: response.data.message };
+};
+
 export const updatePurchaseOrderApi = async (id: number, p: PurchaseOrderPayload) => {
   const response = await apiClient.put<{ data: PurchaseOrder }>(`${base}/${id}`, p);
   invalidateCachedGet(base);
@@ -102,10 +117,11 @@ export const getPendingActualPosApi = async (params: { page?: number; per_page?:
 };
 
 export const finalizeActualPurchaseOrderApi = async (id: number, payload: FinalizeActualPoPayload): Promise<PurchaseOrder> => {
-  let body: any = payload;
+  const { attachments, ...jsonPayload } = payload;
+  let body: any = jsonPayload;
   let headers: Record<string, string> | undefined = undefined;
 
-  if (payload.invoice_file instanceof File) {
+  if (payload.invoice_file instanceof File || (attachments && attachments.length > 0)) {
     const formData = new FormData();
     if (payload.supplier_id) formData.append('supplier_id', String(payload.supplier_id));
     if (payload.parcel_reference) formData.append('parcel_reference', payload.parcel_reference);
@@ -120,7 +136,9 @@ export const finalizeActualPurchaseOrderApi = async (id: number, payload: Finali
       });
     }
     if (payload.notes) formData.append('notes', payload.notes);
-    formData.append('invoice_file', payload.invoice_file);
+    if (payload.high_value_reason) formData.append('high_value_reason', payload.high_value_reason);
+    if (payload.invoice_file instanceof File) formData.append('invoice_file', payload.invoice_file);
+    (attachments || []).forEach((file, fIdx) => formData.append(`attachments[${fIdx}]`, file));
     payload.items.forEach((item, idx) => {
       if (item.id) formData.append(`items[${idx}][id]`, String(item.id));
       if (item.item_id) formData.append(`items[${idx}][item_id]`, String(item.item_id));

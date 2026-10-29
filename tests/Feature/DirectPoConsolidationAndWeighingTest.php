@@ -527,6 +527,8 @@ class DirectPoConsolidationAndWeighingTest extends TestCase
                 'items' => [
                     ['id' => $steel->id, 'item_description' => 'حديد', 'item_reference' => 'PARCEL-900', 'region' => 'المنطقة التاسعة', 'quantity' => 70, 'unit_price' => $unitPrice, 'uom' => 'TON'],
                 ],
+                // Above the Actual PO high-value threshold a written reason is required.
+                'high_value_reason' => 'توريد حديد المرحلة كاملة للقطعة',
             ])
             ->assertStatus(200);
 

@@ -52,6 +52,7 @@ class SystemPurgeService
         'purchase_receipts',
 
         // 3. أوامر الشراء وبنودها
+        'purchase_order_item_sources',
         'purchase_order_items',
         'purchase_orders',
 

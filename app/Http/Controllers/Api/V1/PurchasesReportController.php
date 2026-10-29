@@ -121,6 +121,8 @@ class PurchasesReportController extends Controller
                 'supplier',
                 'items.prItem',
                 'items.supplier',
+                'items.sources.purchaseRequestItem',
+                'items.sources.purchaseRequest',
                 'purchaseRequest.department',
                 'purchaseRequest.targetDepartment',
                 'purchaseRequest.landParcel',
@@ -239,6 +241,7 @@ class PurchasesReportController extends Controller
 
         // 4. Transform into the exact report columns per item based on Purchase Order
         $reportRows = [];
+        $orderFinancials = [];
 
         foreach ($orders as $order) {
             $requestModel = $order->purchaseRequest;
@@ -272,6 +275,17 @@ class PurchasesReportController extends Controller
             if ($accountingFilter === 'PENDING' && $activeInvoices->isNotEmpty()) {
                 continue;
             }
+
+            // Order-level money, counted once per order (and once per invoice) in the supplier breakdown.
+            $orderFinancials[$order->id] = [
+                'supplier_name' => $order->supplier?->company_name ?? $order->supplier?->name ?? '—',
+                'grand_total' => (float) $order->grand_total,
+                'invoices' => $activeInvoices->mapWithKeys(fn ($inv) => [$inv->id => [
+                    'amount' => (float) $inv->amount,
+                    'paid' => (float) $inv->paid_amount,
+                    'outstanding' => (float) $inv->outstanding_amount,
+                ]])->all(),
+            ];
 
             $primaryInvoice = $activeInvoices->first();
             $approvedReceipt = $order->purchaseReceipts->where('status', 'APPROVED')->first();
@@ -360,7 +374,11 @@ class PurchasesReportController extends Controller
                     'unit_price' => $wgUnitPrice,
                     'total_price' => $wgLineTotal,
                     'received_quantity' => $wgReceivedQty,
+                    'contract_quantity' => $wgOrderedQty,
                     'receipt_status' => $targetReceipt?->status ?? $approvedReceipt?->status,
+                    'order_supplier_id' => $order->supplier_id,
+                    'is_department_consolidated' => $order->isDepartmentConsolidated(),
+                    'sources' => $order->items->whereIn('id', $wgPoItemIds)->flatMap(fn ($poItem) => $this->sourceRows($poItem))->values()->all(),
                     'supplier_name' => $order->supplier?->company_name ?? '—',
                     'supplier_id' => $order->supplier_id,
                     'parcel_reference' => $wgPlots ?: $defaultParcelRef,
@@ -389,10 +407,12 @@ class PurchasesReportController extends Controller
                     // الاستلام الفعلي بالموقع كمعلومة استرشادية للحسابات
                     $matchingReceiptItem = null;
                     if ($approvedReceipt && $approvedReceipt->items->isNotEmpty()) {
-                        $matchingReceiptItem = $approvedReceipt->items->first(function ($ri) use ($poItem) {
-                            return $ri->purchase_order_item_id == $poItem->id
-                                || ($ri->purchaseOrderItem && $ri->purchaseOrderItem->item_description === $poItem->item_description);
-                        });
+                        // The receipt line of this PO line first; matching by description is a legacy fallback only,
+                        // never on a consolidated order where several lines may share a description.
+                        $matchingReceiptItem = $approvedReceipt->items->first(fn ($ri) => (int) $ri->purchase_order_item_id === (int) $poItem->id)
+                            ?? ($order->isDepartmentConsolidated() ? null : $approvedReceipt->items->first(function ($ri) use ($poItem) {
+                                return $ri->purchaseOrderItem && $ri->purchaseOrderItem->item_description === $poItem->item_description;
+                            }));
                     }
                     // الاستلام الفعلي بالموقع كمعلومة استرشادية للعرض فقط
                     $rawReceivedQty = $matchingReceiptItem ? (float) $matchingReceiptItem->received_quantity : null;
@@ -478,7 +498,13 @@ class PurchasesReportController extends Controller
                         'total_price' => $lineTotal,
                         // بيانات الاستلام الفعلي بالموقع (بيان استرشادي للحسابات فقط)
                         'received_quantity' => $receivedQty,
+                        // الكمية التعاقدية (أمر الشراء / الفعلي) منفصلة صراحةً عن الكمية المستلمة تشغيلياً
+                        'contract_quantity' => $poQty,
                         'receipt_status' => $approvedReceipt?->status,
+                        'order_supplier_id' => $order->supplier_id,
+                        'is_department_consolidated' => $order->isDepartmentConsolidated(),
+                        // بنود الطلب التي يمثلها السطر المجمع (للتفصيل فقط — لا تدخل في أي إجمالي)
+                        'sources' => $this->sourceRows($poItem),
                         // المورد والموقع
                         'supplier_name' => $effectiveItemSupplier?->company_name ?? $effectiveItemSupplier?->name ?? '—',
                         'supplier_id' => $rowSupplierId,
@@ -528,6 +554,10 @@ class PurchasesReportController extends Controller
                     'unit_price' => (float) $order->grand_total,
                     'total_price' => (float) $order->grand_total,
                     'received_quantity' => null,
+                    'contract_quantity' => 1,
+                    'order_supplier_id' => $order->supplier_id,
+                    'is_department_consolidated' => $order->isDepartmentConsolidated(),
+                    'sources' => [],
                     'supplier_name' => $order->supplier?->company_name ?? $order->supplier?->name ?? '—',
                     'supplier_id' => $order->supplier_id,
                     'parcel_reference' => $defaultParcelRef,
@@ -555,6 +585,7 @@ class PurchasesReportController extends Controller
         $uniqueSuppliers = count(array_unique(array_filter(array_column($reportRows, 'supplier_name'), fn ($s) => $s && $s !== '—')));
         $uniqueParcels = count(array_unique(array_filter(array_column($reportRows, 'parcel_reference'), fn ($p) => $p && $p !== '—')));
         $verifiedCount = count(array_filter($reportRows, fn ($r) => ($r['accounting_status'] ?? '') === 'VERIFIED'));
+        $supplierBreakdown = $this->departmentSupplierBreakdown($reportRows, $orderFinancials);
 
         // 6. Pagination calculation (Default 50 rows per page, supports per_page=ALL for full export)
         $page = max(1, (int) $request->query('page', 1));
@@ -603,7 +634,118 @@ class PurchasesReportController extends Controller
                 'verified_items_count' => $verifiedCount,
             ],
             'departments' => $allDepartments,
+            // إجمالي كل قسم عبر الموردين + تفصيل كل مورد (القيم على مستوى الأمر والفاتورة تُحسب مرة واحدة)
+            'department_supplier_breakdown' => $supplierBreakdown['suppliers'],
+            'department_totals' => $supplierBreakdown['departments'],
             'rows' => $slicedRows,
         ]);
+    }
+
+    /**
+     * Request lines a consolidated PO line stands for. Drill-down only: never added to any total.
+     */
+    private function sourceRows($poItem): array
+    {
+        if (! ($poItem instanceof \App\Models\PurchaseOrderItem) || ! $poItem->relationLoaded('sources')) {
+            return [];
+        }
+
+        return $poItem->sources->map(fn ($source) => [
+            'purchase_request_id' => $source->purchase_request_id,
+            'pr_number' => $source->purchaseRequest?->request_number,
+            'purchase_request_item_id' => $source->purchase_request_item_id,
+            'item_description' => $source->purchaseRequestItem?->item_description,
+            'source_quantity' => (float) $source->source_quantity,
+            'source_uom' => $source->source_uom,
+            'line_quantity' => (float) $source->line_quantity,
+            'line_amount' => (float) $source->line_amount,
+            'is_active' => $source->isActive(),
+        ])->values()->all();
+    }
+
+    /**
+     * Department × supplier totals. An order belongs to one department and is keyed by its own (header)
+     * supplier, so each order, and each of its invoices, is counted exactly once; line amounts come from
+     * PO lines only (never from their sources), and quantities are only summed within one unit.
+     *
+     * @return array{suppliers: array<int, array>, departments: array<int, array>}
+     */
+    private function departmentSupplierBreakdown(array $rows, array $orderFinancials): array
+    {
+        $suppliers = [];
+        $countedOrders = [];
+
+        foreach ($rows as $row) {
+            $orderId = $row['purchase_order_id'];
+            $key = ($row['department_id'] ?? 0) . '|' . ($row['order_supplier_id'] ?? 0);
+
+            if (! isset($suppliers[$key])) {
+                $suppliers[$key] = [
+                    'department_id' => $row['department_id'] ?? null,
+                    'department_name' => $row['department_name'] ?? null,
+                    'department_code' => $row['department_code'] ?? null,
+                    'supplier_id' => $row['order_supplier_id'] ?? null,
+                    'supplier_name' => $orderFinancials[$orderId]['supplier_name'] ?? ($row['supplier_name'] ?? '—'),
+                    'orders_count' => 0,
+                    'lines_count' => 0,
+                    'lines_amount' => 0.0,
+                    'orders_grand_total' => 0.0,
+                    'invoices_count' => 0,
+                    'invoiced_amount' => 0.0,
+                    'paid_amount' => 0.0,
+                    'outstanding_amount' => 0.0,
+                    'quantities_by_uom' => [],
+                ];
+            }
+
+            $entry = &$suppliers[$key];
+            $entry['lines_count']++;
+            $entry['lines_amount'] = round($entry['lines_amount'] + (float) ($row['total_price'] ?? 0), 2);
+
+            $uom = (string) ($row['uom'] ?? '—');
+            $entry['quantities_by_uom'][$uom] ??= ['contract_quantity' => 0.0, 'received_quantity' => 0.0];
+            $entry['quantities_by_uom'][$uom]['contract_quantity'] = round($entry['quantities_by_uom'][$uom]['contract_quantity'] + (float) ($row['contract_quantity'] ?? $row['quantity'] ?? 0), 4);
+            $entry['quantities_by_uom'][$uom]['received_quantity'] = round($entry['quantities_by_uom'][$uom]['received_quantity'] + (float) ($row['received_quantity'] ?? 0), 4);
+
+            if (! isset($countedOrders[$orderId])) {
+                $countedOrders[$orderId] = true;
+                $financials = $orderFinancials[$orderId] ?? ['grand_total' => (float) ($row['grand_total'] ?? 0), 'invoices' => []];
+                $entry['orders_count']++;
+                $entry['orders_grand_total'] = round($entry['orders_grand_total'] + $financials['grand_total'], 2);
+                foreach ($financials['invoices'] as $invoice) {
+                    $entry['invoices_count']++;
+                    $entry['invoiced_amount'] = round($entry['invoiced_amount'] + $invoice['amount'], 2);
+                    $entry['paid_amount'] = round($entry['paid_amount'] + $invoice['paid'], 2);
+                    $entry['outstanding_amount'] = round($entry['outstanding_amount'] + $invoice['outstanding'], 2);
+                }
+            }
+            unset($entry);
+        }
+
+        $departments = [];
+        foreach ($suppliers as $entry) {
+            $deptKey = (string) ($entry['department_id'] ?? 0);
+            $departments[$deptKey] ??= [
+                'department_id' => $entry['department_id'],
+                'department_name' => $entry['department_name'],
+                'department_code' => $entry['department_code'],
+                'suppliers_count' => 0,
+                'orders_count' => 0,
+                'lines_amount' => 0.0,
+                'orders_grand_total' => 0.0,
+                'invoiced_amount' => 0.0,
+                'paid_amount' => 0.0,
+                'outstanding_amount' => 0.0,
+            ];
+            $dept = &$departments[$deptKey];
+            $dept['suppliers_count']++;
+            $dept['orders_count'] += $entry['orders_count'];
+            foreach (['lines_amount', 'orders_grand_total', 'invoiced_amount', 'paid_amount', 'outstanding_amount'] as $field) {
+                $dept[$field] = round($dept[$field] + $entry[$field], 2);
+            }
+            unset($dept);
+        }
+
+        return ['suppliers' => array_values($suppliers), 'departments' => array_values($departments)];
     }
 }

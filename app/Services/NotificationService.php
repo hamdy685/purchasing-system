@@ -128,6 +128,19 @@ class NotificationService
         'purchase_quote_recommendations_ready',
     ];
 
+    /**
+     * The one informational notification the General Manager receives despite the executive gate:
+     * an Actual PO issued above the high-value threshold (config procurement.actual_po_high_value_threshold).
+     */
+    public const GM_HIGH_VALUE_ACTUAL_PO_TYPE = 'purchase_order_actual_high_value';
+
+    private function isGmHighValueNotice(User $user, string $type, Model $notifiable): bool
+    {
+        return $type === self::GM_HIGH_VALUE_ACTUAL_PO_TYPE
+            && $notifiable instanceof PurchaseOrder
+            && $user->hasRole('general_manager');
+    }
+
     public function isExecutiveUser(User $user): bool
     {
         return ($user->hasRole('general_manager') || $user->hasRole('execution_manager')) && ! $user->hasRole('admin');
@@ -135,29 +148,39 @@ class NotificationService
 
     public function scopeExecutiveNotifications(\Illuminate\Database\Eloquent\Builder $query, User $user): void
     {
-        $query->whereIn('type', self::EXECUTIVE_ACTIONABLE_TYPES)
-            ->where('notifiable_type', PurchaseRequest::class)
-            ->whereHasMorph(
-                'notifiable',
-                [PurchaseRequest::class],
-                function ($prQuery) use ($user) {
-                    $prQuery->whereIn('status', [
-                        'PENDING_EXECUTIVE_APPROVAL',
-                        'PENDING_EXECUTIVE_QUOTE_DECISION',
-                    ]);
+        $query->where(function ($visible) use ($user) {
+            $visible->where(function ($actionable) use ($user) {
+                $actionable->whereIn('type', self::EXECUTIVE_ACTIONABLE_TYPES)
+                    ->where('notifiable_type', PurchaseRequest::class)
+                    ->whereHasMorph(
+                        'notifiable',
+                        [PurchaseRequest::class],
+                        function ($prQuery) use ($user) {
+                            $prQuery->whereIn('status', [
+                                'PENDING_EXECUTIVE_APPROVAL',
+                                'PENDING_EXECUTIVE_QUOTE_DECISION',
+                            ]);
 
-                    if ($user->hasRole('general_manager')) {
-                        $prQuery->whereDoesntHave('requester.manager.roles', function ($rq) {
-                            $rq->where('slug', 'execution_manager');
-                        });
-                    } elseif ($user->hasRole('execution_manager')) {
-                        $prQuery->where(function ($eq) use ($user) {
-                            $eq->where('reviewer_user_id', $user->id)
-                               ->orWhereHas('requester', fn ($rq) => $rq->where('manager_id', $user->id));
-                        });
-                    }
-                }
-            );
+                            if ($user->hasRole('general_manager')) {
+                                $prQuery->whereDoesntHave('requester.manager.roles', function ($rq) {
+                                    $rq->where('slug', 'execution_manager');
+                                });
+                            } elseif ($user->hasRole('execution_manager')) {
+                                $prQuery->where(function ($eq) use ($user) {
+                                    $eq->where('reviewer_user_id', $user->id)
+                                       ->orWhereHas('requester', fn ($rq) => $rq->where('manager_id', $user->id));
+                                });
+                            }
+                        }
+                    );
+            });
+
+            if ($user->hasRole('general_manager')) {
+                $visible->orWhere(fn ($highValue) => $highValue
+                    ->where('type', self::GM_HIGH_VALUE_ACTUAL_PO_TYPE)
+                    ->where('notifiable_type', PurchaseOrder::class));
+            }
+        });
     }
 
     public function createNotification(User|int $recipient, string $type, string $title, string $message, Model $notifiable): ?Notification
@@ -181,7 +204,7 @@ class NotificationService
 
         // Strict Gate for Executive Directors (Eng. Mohamed & Eng. Karim):
         // ZERO Informational Notifications. Only actionable decision-pending notifications are permitted.
-        if ($this->isExecutiveUser($user)) {
+        if ($this->isExecutiveUser($user) && ! $this->isGmHighValueNotice($user, $type, $notifiable)) {
             // 1. Must be strictly an allowed actionable decision type
             if (! in_array($type, self::EXECUTIVE_ACTIONABLE_TYPES, true)) {
                 return null;

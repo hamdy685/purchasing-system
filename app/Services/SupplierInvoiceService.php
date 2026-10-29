@@ -333,6 +333,13 @@ class SupplierInvoiceService
             }
         }
 
+        // A consolidated PO belongs to one supplier: its invoice (and so its ledger entry) can only be that supplier's.
+        if ($purchaseOrder->isDepartmentConsolidated() && $supplierId && (int) $supplierId !== (int) $purchaseOrder->supplier_id) {
+            throw ValidationException::withMessages([
+                'supplier_id' => ['فاتورة أمر الشراء المجمع لا يمكن أن تكون لمورد غير مورد الأمر.'],
+            ]);
+        }
+
         if ($amount <= 0) {
             throw ValidationException::withMessages(['amount' => ['قيمة الفاتورة يجب أن تكون أكبر من صفر.']]);
         }

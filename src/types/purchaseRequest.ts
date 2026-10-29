@@ -253,6 +253,8 @@ export interface PurchaseRequest {
   required_action_label?: string | null;
   requires_warehouse_receipt?: boolean;
   target_department_id?: number | null;
+  /** The server issues one consolidated PO per supplier and scope for this request's department. */
+  consolidated_po_required?: boolean;
   reviewer_user_id?: number | null;
   department_id?: number | null;
   direct_supplier?: { id: number; company_name: string; code?: string | null } | null;

@@ -4,6 +4,7 @@ import { Button } from '../ui/Button';
 import {
   PurchaseOrder,
   FinalizeActualPoItemPayload,
+  PurchaseOrderItemSource,
   المورد,
 } from '../../types/purchaseOrder';
 import {
@@ -46,7 +47,13 @@ interface EditableModalItem {
   is_supplementary?: boolean;
   supplement_batch?: number | null;
   is_discount_applied?: boolean;
+  /** Request lines a department-consolidated line stands for (display only). */
+  sources?: PurchaseOrderItemSource[];
 }
+
+/** Above this Actual PO total a written reason is required (the server enforces config procurement.actual_po_high_value_threshold). */
+const HIGH_VALUE_THRESHOLD = 500000;
+const HIGH_VALUE_REASON_MIN_LENGTH = 10;
 
 export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
   isOpen,
@@ -64,7 +71,9 @@ export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
   const [discountType, setDiscountType] = useState<ActualPoDiscountType>('NONE');
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const [finalizationNotes, setFinalizationNotes] = useState<string>('');
-  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [invoiceFiles, setInvoiceFiles] = useState<File[]>([]);
+  const [highValueReason, setHighValueReason] = useState<string>('');
+  const [serverRequiresReason, setServerRequiresReason] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
   const [saveBusy, setSaveBusy] = useState<boolean>(false);
 
@@ -78,7 +87,9 @@ export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
       setDiscountType('NONE');
       setDiscountPercentage(0);
       setFinalizationNotes('');
-      setInvoiceFile(null);
+      setInvoiceFiles([]);
+      setHighValueReason('');
+      setServerRequiresReason(false);
       setError(null);
       return;
     }
@@ -174,6 +185,7 @@ export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
             is_supplementary: isSupplementary,
             supplement_batch: supplementBatch,
             is_discount_applied: Boolean(it.is_discount_applied),
+            sources: it.sources ?? [],
           });
         });
 
@@ -200,6 +212,11 @@ export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
       discountPercentage,
     });
   }, [items, discountType, discountPercentage]);
+
+  // A department-consolidated order keeps one supplier: only the whole order may move to another one.
+  const isConsolidated = Boolean(po?.is_department_consolidated);
+  const estimatedGrandTotal = financials.grandTotal + Number(po?.tax_amount || 0);
+  const highValueRequired = estimatedGrandTotal > HIGH_VALUE_THRESHOLD || serverRequiresReason;
 
   const allSuppliers = useMemo(() => {
     const list = [...suppliers];
@@ -339,8 +356,8 @@ export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
           is_discount_applied: discountType === 'SELECTED_ITEMS' ? Boolean(it.is_discount_applied) : false,
         })),
       });
-      if (invoiceFile) {
-        await uploadPurchaseOrderInvoiceApi(po.id, invoiceFile);
+      for (const file of invoiceFiles) {
+        await uploadPurchaseOrderInvoiceApi(po.id, file);
       }
       toast.success('✅ تم حفظ تعديلات أمر الشراء وإرفاق الفاتورة بنجاح.');
     } catch (err) {
@@ -367,6 +384,11 @@ export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
     }
 
     if (!validateDiscounts()) {
+      return;
+    }
+
+    if (highValueRequired && highValueReason.trim().length < HIGH_VALUE_REASON_MIN_LENGTH) {
+      setError(`قيمة أمر الشراء الفعلي تتجاوز ${formatCleanNumber(HIGH_VALUE_THRESHOLD)} جنيه. اكتب سبب الإصدار (${HIGH_VALUE_REASON_MIN_LENGTH} أحرف على الأقل).`);
       return;
     }
 
@@ -403,13 +425,17 @@ export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
         discount_item_ids: targetedItemIds,
         items: payloadItems,
         notes: finalizationNotes.trim() || undefined,
-        invoice_file: invoiceFile,
+        attachments: invoiceFiles,
+        high_value_reason: highValueRequired ? highValueReason.trim() : undefined,
       });
 
       toast.success(`✅ تم إصدار أمر الشراء الفعلي (${po.po_number}) واعتماده وإرساله للإدارة المالية بنجاح.`);
       onClose();
       onSuccess?.(po.po_number);
     } catch (err) {
+      if ((err as { response?: { data?: { code?: string } } })?.response?.data?.code === 'HIGH_VALUE_REASON_REQUIRED') {
+        setServerRequiresReason(true);
+      }
       setError(parseApiError(err).message);
     } finally {
       setBusy(false);
@@ -819,7 +845,7 @@ export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
                             <select
                               value={item.supplier_id || po.supplier_id || ''}
                               onChange={(e) => handleItemFieldChange(idx, 'supplier_id', e.target.value ? Number(e.target.value) : null)}
-                              disabled={busy || saveBusy}
+                              disabled={busy || saveBusy || isConsolidated}
                               className="w-full min-w-[130px] max-w-[160px] h-9 rounded-lg border border-cyan-500/60 bg-[#0b1424] px-2 text-xs text-slate-100 font-bold outline-none focus:border-cyan-300 disabled:opacity-60 truncate cursor-pointer"
                               title="تحديد المورد الفعلي لهذا البند"
                             >
@@ -971,7 +997,7 @@ export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
                       <select
                         value={item.supplier_id || po.supplier_id || ''}
                         onChange={(e) => handleItemFieldChange(idx, 'supplier_id', e.target.value ? Number(e.target.value) : null)}
-                        disabled={busy || saveBusy}
+                        disabled={busy || saveBusy || isConsolidated}
                         className="h-9 w-full rounded-lg border border-cyan-500/60 bg-[#0b1424] px-2 text-xs text-slate-100 font-bold outline-none focus:border-cyan-300"
                       >
                         {allSuppliers.map((s) => (
@@ -1085,6 +1111,36 @@ export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
               </div>
             </div>
 
+            {isConsolidated && (
+              <div data-testid="consolidated-actual-po-note" className="rounded-xl border border-emerald-700/50 bg-emerald-950/30 p-3 text-xs text-emerald-200 space-y-1.5">
+                <p className="font-bold">🧾 أمر شراء مجمع لمورد واحد: يمكن تغيير مورد الأمر بالكامل فقط، ولا يمكن جعل بند لمورد مختلف.</p>
+                {items.filter((it) => (it.sources?.length ?? 0) > 1).map((it) => (
+                  <p key={it.id ?? it.item_description} className="text-emerald-300/90">
+                    {it.item_description}: مجمع من {it.sources!.length} بنود طلب (
+                    {it.sources!.map((s) => `${formatCleanNumber(Number(s.line_quantity))} ${getUnitLabel(it.uom)}`).join(' + ')})
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {highValueRequired && (
+              <div data-testid="high-value-warning" role="alert" className="rounded-xl border border-rose-500/60 bg-rose-950/30 p-4 space-y-2">
+                <p className="text-xs font-black text-rose-200">
+                  ⚠️ قيمة أمر الشراء الفعلي {formatCleanNumber(estimatedGrandTotal, 2)} جنيه تتجاوز {formatCleanNumber(HIGH_VALUE_THRESHOLD)} جنيه. اكتب سبب الإصدار (إلزامي).
+                </p>
+                <textarea
+                  rows={2}
+                  aria-label="سبب إصدار أمر شراء فعلي بقيمة مرتفعة"
+                  value={highValueReason}
+                  onChange={(e) => setHighValueReason(e.target.value)}
+                  disabled={busy || saveBusy}
+                  placeholder="مثال: توريد المرحلة كاملة دفعة واحدة بسعر أقل..."
+                  className="w-full bg-slate-900 border border-rose-700/60 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-rose-400 disabled:opacity-60"
+                />
+                <p className="text-[11px] text-rose-300/80">سيتم إرسال إشعار للمدير العام والحسابات بالسبب.</p>
+              </div>
+            )}
+
             {/* ── Finalization Notes for Finance ── */}
             <div className="space-y-1.5 pt-2 border-t border-slate-800">
               <label className="text-xs font-bold text-slate-300 block">
@@ -1107,9 +1163,9 @@ export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
                   <span>🧾</span>
                   <span>إرفاق فاتورة الشراء / المورد (تُحفظ في Google Drive بمجلد «فواتير»):</span>
                 </label>
-                {invoiceFile && (
+                {invoiceFiles.length > 0 && (
                   <span className="text-[11px] font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-700/60 flex items-center gap-1">
-                    <span>✓</span> تم اختيار الملف
+                    <span>✓</span> تم اختيار {invoiceFiles.length} ملف
                   </span>
                 )}
               </div>
@@ -1118,32 +1174,45 @@ export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
                 <label className="flex-1 cursor-pointer flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-amber-500/40 hover:border-amber-400 bg-slate-900/80 hover:bg-slate-900 text-xs font-bold text-amber-200 transition-colors">
                   <span>📎</span>
                   <span className="truncate max-w-[280px]">
-                    {invoiceFile ? invoiceFile.name : 'اضغط لاختيار صورة الفاتورة أو ملف PDF...'}
+                    {invoiceFiles.length > 0 ? 'إضافة ملفات أخرى...' : 'اضغط لاختيار صور الفاتورة أو ملفات PDF (يمكن اختيار أكثر من ملف)...'}
                   </span>
                   <input
                     type="file"
+                    multiple
+                    data-testid="invoice-files-input"
                     accept="image/*,application/pdf"
                     className="hidden"
                     disabled={busy || saveBusy}
                     onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) setInvoiceFile(file);
+                      const picked = Array.from(e.target.files ?? []);
+                      if (picked.length > 0) setInvoiceFiles((prev) => [...prev, ...picked].slice(0, 10));
+                      e.target.value = '';
                     }}
                   />
                 </label>
-
-                {invoiceFile && (
-                  <button
-                    type="button"
-                    onClick={() => setInvoiceFile(null)}
-                    className="px-3 py-2 text-xs font-bold text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-950/80 rounded-xl border border-red-800/50 transition-colors"
-                  >
-                    ✕ إلغاء
-                  </button>
-                )}
               </div>
 
-              {invoiceFile && (
+              {invoiceFiles.length > 0 && (
+                <ul className="space-y-1">
+                  {invoiceFiles.map((file, fIdx) => (
+                    <li key={`${file.name}-${fIdx}`} className="flex items-center justify-between gap-2 text-xs text-slate-200 bg-slate-900/80 rounded-lg border border-amber-500/30 px-2.5 py-1.5">
+                      <span className="truncate">
+                        {fIdx === 0 ? '📄 الفاتورة الأساسية: ' : '📎 '}{file.name}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`إزالة ${file.name}`}
+                        onClick={() => setInvoiceFiles((prev) => prev.filter((_, i) => i !== fIdx))}
+                        className="px-2 py-0.5 text-[11px] font-bold text-red-400 hover:text-red-300 bg-red-950/40 rounded border border-red-800/50"
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {invoiceFiles.length > 0 && (
                 <div className="p-3 rounded-xl bg-slate-900/90 border border-amber-500/30 text-xs space-y-1.5 animate-fade-in text-right">
                   <div className="text-amber-300 font-bold flex items-center gap-1.5">
                     <span>🏷️</span>
@@ -1159,7 +1228,8 @@ export const FinalizeActualPoModal: React.FC<FinalizeActualPoModalProps> = ({
               )}
 
               {/* If PO already has invoice(s) attached */}
-              {!invoiceFile && (po?.invoice_attachments?.length || po?.invoice_photo_url) && (
+              {/* Files already attached stay attached: new files are added, never replace them. */}
+              {Boolean(po?.invoice_attachments?.length || po?.invoice_photo_url) && (
                 <div className="space-y-1.5">
                   {po?.invoice_attachments && po.invoice_attachments.length > 0 ? (
                     po.invoice_attachments.map((att, idx) => (

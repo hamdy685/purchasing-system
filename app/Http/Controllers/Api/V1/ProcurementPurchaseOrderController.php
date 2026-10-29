@@ -25,6 +25,9 @@ use Illuminate\Support\Facades\DB;
 
 class ProcurementPurchaseOrderController extends Controller
 {
+    /** Invoice files accepted in one Actual PO issue or one upload. */
+    private const MAX_INVOICE_ATTACHMENTS = 10;
+
     public function __construct(
         protected PurchaseOrderService $poService,
         protected ProcurementPurchaseRequestService $procurementPrService,
@@ -327,6 +330,7 @@ class ProcurementPurchaseOrderController extends Controller
             'createdBy',
             'items.item',
             'items.supplier',
+            'items.sources.purchaseRequestItem',
             'items.shipmentGroup',
             'items.weighingGroupItem.weighingGroup',
             'shipmentGroups.items',
@@ -394,6 +398,10 @@ class ProcurementPurchaseOrderController extends Controller
      */
     public function storePo(CreatePurchaseOrderRequest $request): JsonResponse
     {
+        if ($consolidated = $this->storeDepartmentConsolidatedPos($request)) {
+            return $consolidated;
+        }
+
         if ($request->filled('groups') && is_array($request->validated('groups')) && count($request->validated('groups')) > 0) {
             return $this->storeBatchPo($request);
         }
@@ -433,6 +441,10 @@ class ProcurementPurchaseOrderController extends Controller
      */
     public function storeBatchPo(CreatePurchaseOrderRequest $request): JsonResponse
     {
+        if ($consolidated = $this->storeDepartmentConsolidatedPos($request)) {
+            return $consolidated;
+        }
+
         $validated = $request->validated();
         $prId = (int) $validated['purchase_request_id'];
         $groups = $validated['groups'] ?? [];
@@ -526,6 +538,63 @@ class ProcurementPurchaseOrderController extends Controller
         ], 201);
     }
 
+    /**
+     * Preview of the consolidated POs the same payload would issue (nothing is saved).
+     */
+    public function previewConsolidatedPos(CreatePurchaseOrderRequest $request): JsonResponse
+    {
+        $pr = PurchaseRequest::with(['department', 'targetDepartment'])->findOrFail((int) $request->validated('purchase_request_id'));
+        if (! \App\Services\PurchaseOrderSourceService::isMandatoryForRequest($pr)) {
+            return response()->json(['consolidated' => false, 'data' => []]);
+        }
+
+        try {
+            $orders = app(\App\Services\DepartmentPoConsolidationService::class)->preview($pr, $request->validated());
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => $e->validator->errors()->first() ?: 'خطأ في التحقق من بيانات أمر الشراء المجمع.',
+                'errors'  => $e->errors(),
+            ], 422);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        }
+
+        return response()->json(['consolidated' => true, 'data' => $orders]);
+    }
+
+    /**
+     * Requests of the mandatory-consolidation departments are issued server-side as one consolidated PO
+     * per supplier and compatible scope, whatever split the UI sent. Returns null for every other request.
+     */
+    private function storeDepartmentConsolidatedPos(CreatePurchaseOrderRequest $request): ?JsonResponse
+    {
+        $pr = PurchaseRequest::with(['department', 'targetDepartment'])->find((int) $request->validated('purchase_request_id'));
+        if (! $pr || ! \App\Services\PurchaseOrderSourceService::isMandatoryForRequest($pr)) {
+            return null;
+        }
+
+        try {
+            $result = app(\App\Services\DepartmentPoConsolidationService::class)->issue($request->user(), $pr, $request->validated());
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => $e->validator->errors()->first() ?: 'خطأ في التحقق من بيانات أمر الشراء المجمع.',
+                'errors'  => $e->errors(),
+            ], 422);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        }
+
+        $orders = $result['orders'];
+
+        return response()->json([
+            'message' => $result['replayed']
+                ? 'تم إصدار أوامر الشراء المجمعة لهذا الطلب من قبل.'
+                : 'تم إصدار ' . $orders->count() . ' أمر شراء مجمع (أمر لكل مورد) وإرسالها للحسابات.',
+            'consolidated' => true,
+            'replayed' => $result['replayed'],
+            'data' => PurchaseOrderResource::collection($orders),
+        ], $result['replayed'] ? 200 : 201);
+    }
 
     /**
      * Update draft Purchase Order header details.
@@ -800,6 +869,9 @@ class ProcurementPurchaseOrderController extends Controller
             'invoice_file'             => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:20480'],
             'invoice_photo'            => ['nullable', 'string'],
             'invoice_photo_name'       => ['nullable', 'string', 'max:255'],
+            'attachments'              => ['nullable', 'array', 'max:' . self::MAX_INVOICE_ATTACHMENTS],
+            'attachments.*'            => ['file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:20480'],
+            'high_value_reason'        => ['nullable', 'string', 'max:2000'],
         ]);
 
         $po = PurchaseOrder::with([
@@ -832,75 +904,52 @@ class ProcurementPurchaseOrderController extends Controller
             }
         }
 
+        // Files are stored first; the Actual PO and its attachment rows are then saved together,
+        // so an order is never issued without its files nor files recorded on an order that failed.
         try {
-            $finalizedPo = $this->poService->finalizeActualPo(
-                $request->user(),
-                $po,
-                $validated['items'],
-                $validated['notes'] ?? null,
-                !empty($validated['supplier_id']) ? (int) $validated['supplier_id'] : null,
-                !empty($validated['parcel_reference']) ? trim((string) $validated['parcel_reference']) : null,
-                !empty($validated['region']) ? trim((string) $validated['region']) : null,
-                $validated['discount_type'] ?? null,
-                isset($validated['discount_percentage']) ? (float) $validated['discount_percentage'] : null,
-                $validated['discount_item_ids'] ?? null
-            );
-
-            // Handle optional invoice attachment uploaded during actual PO finalization
-            $uploadedData = null;
-            $invoiceNumber = $request->input('invoice_number');
-            if ($request->hasFile('invoice_file')) {
-                $ext = $request->file('invoice_file')->getClientOriginalExtension() ?: 'pdf';
-                $customName = \App\Services\DocumentNamingService::generateInvoiceName(
-                    $finalizedPo,
-                    $invoiceNumber,
-                    $ext,
-                    1
-                );
-                $uploadedData = \App\Services\StorageService::storeUploadedFile($request->file('invoice_file'), 'invoices', $customName);
-            } elseif ($request->filled('invoice_photo')) {
-                $customName = \App\Services\DocumentNamingService::generateInvoiceName(
-                    $finalizedPo,
-                    $invoiceNumber,
-                    'pdf',
-                    1
-                );
-                $uploadedData = \App\Services\StorageService::storeBase64File(
-                    $request->input('invoice_photo'),
-                    'invoices',
-                    $customName
-                );
-            }
-
-            if ($uploadedData && ! empty($uploadedData['path'])) {
-                $finalizedPo->update([
-                    'invoice_photo_path' => $uploadedData['path'],
-                    'invoice_photo_name' => $uploadedData['name'] ?? 'invoice_' . time(),
-                    'invoice_photo_size' => $uploadedData['size'] ?? null,
-                    'invoice_photo_mime_type' => $uploadedData['mime_type'] ?? null,
-                    'invoice_photo_drive_id' => $uploadedData['drive_id'] ?? null,
-                    'invoice_photo_uploaded_at' => now(),
-                    'invoice_photo_uploaded_by_user_id' => $request->user()->id,
-                ]);
-
-                $finalizedPo->attachments()->create([
-                    'uploaded_by_user_id' => $request->user()->id,
-                    'file_name' => $uploadedData['name'] ?? 'invoice_' . time(),
-                    'file_path' => $uploadedData['path'],
-                    'drive_id' => $uploadedData['drive_id'] ?? null,
-                    'mime_type' => $uploadedData['mime_type'] ?? 'application/pdf',
-                    'file_size' => $uploadedData['size'] ?? 0,
-                ]);
-
-                app(\App\Services\SystemEventService::class)->recordAction(
-                    $finalizedPo,
-                    'INVOICE_ATTACHED',
-                    "تم إرفاق فاتورة أمر الشراء الفعلي ({$finalizedPo->po_number}) وتخزينها في Google Drive بمجلد الفواتير.",
-                    ['user_id' => $request->user()->id, 'invoice_path' => $uploadedData['path'], 'drive_id' => $uploadedData['drive_id'] ?? null]
-                );
-            }
+            $uploads = $this->storeInvoiceUploads($request, $po);
         } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        try {
+            $finalizedPo = DB::transaction(function () use ($request, $po, $validated, $uploads) {
+                $finalizedPo = $this->poService->finalizeActualPo(
+                    $request->user(),
+                    $po,
+                    $validated['items'],
+                    $validated['notes'] ?? null,
+                    !empty($validated['supplier_id']) ? (int) $validated['supplier_id'] : null,
+                    !empty($validated['parcel_reference']) ? trim((string) $validated['parcel_reference']) : null,
+                    !empty($validated['region']) ? trim((string) $validated['region']) : null,
+                    $validated['discount_type'] ?? null,
+                    isset($validated['discount_percentage']) ? (float) $validated['discount_percentage'] : null,
+                    $validated['discount_item_ids'] ?? null,
+                    $validated['high_value_reason'] ?? null
+                );
+
+                // On the Actual PO the first file is the main invoice document.
+                $this->recordInvoiceUploads($finalizedPo, $uploads, $request->user(), 'INVOICE_ATTACHED', true);
+
+                return $finalizedPo;
+            });
+        } catch (\App\Exceptions\HighValueReasonRequiredException $e) {
+            $this->discardInvoiceUploads($uploads);
+
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'HIGH_VALUE_REASON_REQUIRED',
+                'grand_total' => round($e->grandTotal, 2),
+                'threshold' => $e->threshold,
+                'errors' => ['high_value_reason' => [$e->getMessage()]],
+            ], 422);
+        } catch (\RuntimeException $e) {
+            $this->discardInvoiceUploads($uploads);
+
             return response()->json(['message' => $e->getMessage()], 409);
+        } catch (\Throwable $e) {
+            $this->discardInvoiceUploads($uploads);
+            throw $e;
         }
 
         return response()->json([
@@ -909,74 +958,116 @@ class ProcurementPurchaseOrderController extends Controller
         ]);
     }
 
+    /**
+     * Store the invoice files of a request: the legacy single invoice_file / invoice_photo first, then attachments[].
+     *
+     * @return array<int, array> StorageService results with a non-empty path
+     */
+    private function storeInvoiceUploads(Request $request, PurchaseOrder $po): array
+    {
+        $invoiceNumber = $request->input('invoice_number');
+        $files = [];
+        if ($request->hasFile('invoice_file')) {
+            $files[] = $request->file('invoice_file');
+        }
+        foreach ((array) $request->file('attachments', []) as $file) {
+            $files[] = $file;
+        }
+
+        $uploads = [];
+        try {
+            foreach ($files as $file) {
+                $ext = $file->getClientOriginalExtension() ?: 'pdf';
+                $name = \App\Services\DocumentNamingService::generateInvoiceName($po, $invoiceNumber, $ext, count($uploads) + 1);
+                $uploads[] = \App\Services\StorageService::storeUploadedFile($file, 'invoices', $name);
+            }
+            if (! $request->hasFile('invoice_file') && $request->filled('invoice_photo')) {
+                $name = \App\Services\DocumentNamingService::generateInvoiceName($po, $invoiceNumber, 'pdf', count($uploads) + 1);
+                $uploads[] = \App\Services\StorageService::storeBase64File($request->input('invoice_photo'), 'invoices', $name);
+            }
+        } catch (\Throwable $e) {
+            $this->discardInvoiceUploads(array_values(array_filter($uploads)));
+            throw $e instanceof \RuntimeException ? $e : new \RuntimeException('تعذر حفظ ملف الفاتورة. أعد المحاولة.', 0, $e);
+        }
+
+        return array_values(array_filter($uploads, fn ($u) => is_array($u) && ! empty($u['path'])));
+    }
+
+    /**
+     * Record stored files as attachments of the PO. The main invoice document is the first or the last file.
+     */
+    private function recordInvoiceUploads(PurchaseOrder $po, array $uploads, \App\Models\User $user, string $event, bool $firstIsMain): void
+    {
+        if ($uploads === []) {
+            return;
+        }
+
+        foreach ($uploads as $upload) {
+            $po->attachments()->create([
+                'uploaded_by_user_id' => $user->id,
+                'file_name' => $upload['name'] ?? 'invoice_' . time(),
+                'file_path' => $upload['path'],
+                'drive_id' => $upload['drive_id'] ?? null,
+                'mime_type' => $upload['mime_type'] ?? 'application/pdf',
+                'file_size' => $upload['size'] ?? 0,
+            ]);
+
+            app(\App\Services\SystemEventService::class)->recordAction(
+                $po,
+                $event,
+                "تم إرفاق فاتورة أمر الشراء الفعلي ({$po->po_number}) وتخزينها في Google Drive بمجلد الفواتير.",
+                ['user_id' => $user->id, 'invoice_path' => $upload['path'], 'drive_id' => $upload['drive_id'] ?? null]
+            );
+        }
+
+        $main = $firstIsMain ? $uploads[0] : $uploads[count($uploads) - 1];
+        $po->update([
+            'invoice_photo_path' => $main['path'],
+            'invoice_photo_name' => $main['name'] ?? 'invoice_' . time(),
+            'invoice_photo_size' => $main['size'] ?? null,
+            'invoice_photo_mime_type' => $main['mime_type'] ?? null,
+            'invoice_photo_drive_id' => $main['drive_id'] ?? null,
+            'invoice_photo_uploaded_at' => now(),
+            'invoice_photo_uploaded_by_user_id' => $user->id,
+        ]);
+    }
+
+    /**
+     * Remove stored files whose Actual PO was not saved (local/S3 copies; a Drive copy, if any, stays orphaned).
+     */
+    private function discardInvoiceUploads(array $uploads): void
+    {
+        foreach ($uploads as $upload) {
+            if (! empty($upload['path'])) {
+                \App\Services\StorageService::delete($upload['path']);
+            }
+        }
+    }
+
     public function uploadInvoice(Request $request, string|int $id): JsonResponse
     {
         $request->validate([
             'invoice_file' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:20480'],
             'invoice_photo' => ['nullable', 'string'],
             'invoice_photo_name' => ['nullable', 'string', 'max:255'],
+            'attachments' => ['nullable', 'array', 'max:' . self::MAX_INVOICE_ATTACHMENTS],
+            'attachments.*' => ['file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:20480'],
         ]);
 
         $po = PurchaseOrder::with(['items.item', 'supplier', 'purchaseRequest.landParcel'])->findOrFail((int) $id);
 
-        $uploadedData = null;
-        $invoiceNumber = $request->input('invoice_number');
         try {
-            if ($request->hasFile('invoice_file')) {
-                $ext = $request->file('invoice_file')->getClientOriginalExtension() ?: 'pdf';
-                $customName = \App\Services\DocumentNamingService::generateInvoiceName(
-                    $po,
-                    $invoiceNumber,
-                    $ext,
-                    1
-                );
-                $uploadedData = \App\Services\StorageService::storeUploadedFile($request->file('invoice_file'), 'invoices', $customName);
-            } elseif ($request->filled('invoice_photo')) {
-                $customName = \App\Services\DocumentNamingService::generateInvoiceName(
-                    $po,
-                    $invoiceNumber,
-                    'pdf',
-                    1
-                );
-                $uploadedData = \App\Services\StorageService::storeBase64File(
-                    $request->input('invoice_photo'),
-                    'invoices',
-                    $customName
-                );
-            }
+            $uploads = $this->storeInvoiceUploads($request, $po);
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        if (! $uploadedData || empty($uploadedData['path'])) {
+        if ($uploads === []) {
             return response()->json(['message' => 'لم يتم استلام ملف الفاتورة بشكل صحيح.'], 422);
         }
 
-        $po->update([
-            'invoice_photo_path' => $uploadedData['path'],
-            'invoice_photo_name' => $uploadedData['name'] ?? 'invoice_' . time(),
-            'invoice_photo_size' => $uploadedData['size'] ?? null,
-            'invoice_photo_mime_type' => $uploadedData['mime_type'] ?? null,
-            'invoice_photo_drive_id' => $uploadedData['drive_id'] ?? null,
-            'invoice_photo_uploaded_at' => now(),
-            'invoice_photo_uploaded_by_user_id' => $request->user()->id,
-        ]);
-
-        $po->attachments()->create([
-            'uploaded_by_user_id' => $request->user()->id,
-            'file_name' => $uploadedData['name'] ?? 'invoice_' . time(),
-            'file_path' => $uploadedData['path'],
-            'drive_id' => $uploadedData['drive_id'] ?? null,
-            'mime_type' => $uploadedData['mime_type'] ?? 'application/pdf',
-            'file_size' => $uploadedData['size'] ?? 0,
-        ]);
-
-        app(\App\Services\SystemEventService::class)->recordAction(
-            $po,
-            'INVOICE_UPLOADED',
-            "تم إرفاق فاتورة أمر الشراء الفعلي ({$po->po_number}) وتخزينها في Google Drive بمجلد الفواتير.",
-            ['user_id' => $request->user()->id, 'invoice_path' => $uploadedData['path'], 'drive_id' => $uploadedData['drive_id'] ?? null]
-        );
+        // Attachments are only ever added, never replaced or removed; the latest upload is the main document.
+        DB::transaction(fn () => $this->recordInvoiceUploads($po, $uploads, $request->user(), 'INVOICE_UPLOADED', false));
 
         return response()->json([
             'message' => 'تم إرفاق الفاتورة وحفظها في مجلد الفواتير بنجاح ✅',

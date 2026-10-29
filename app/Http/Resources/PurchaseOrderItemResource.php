@@ -47,6 +47,18 @@ class PurchaseOrderItemResource extends JsonResource
             'is_supplementary' => (bool) $this->is_supplementary,
             'is_consolidated_steel' => (bool) $this->is_consolidated_steel,
             'steel_components' => $this->whenLoaded('steelComponents'),
+            // Request lines a department-consolidated line stands for (reference only; never summed with the line).
+            'sources'          => $this->whenLoaded('sources', fn () => $this->sources->map(fn ($source) => [
+                'id'                       => $source->id,
+                'purchase_request_id'      => $source->purchase_request_id,
+                'purchase_request_item_id' => $source->purchase_request_item_id,
+                'item_description'         => $source->purchaseRequestItem?->item_description,
+                'source_quantity'          => \App\Support\DecimalHelper::formatCleanDecimal($source->source_quantity, 4),
+                'source_uom'               => $source->source_uom,
+                'line_quantity'            => \App\Support\DecimalHelper::formatCleanDecimal($source->line_quantity, 4),
+                'line_amount'              => number_format((float) $source->line_amount, 2, '.', ''),
+                'is_active'                => $source->isActive(),
+            ])->values()),
             'supplement_batch' => $this->supplement_batch ? (int) $this->supplement_batch : null,
             'supplier_id'      => $this->supplier_id,
             'supplier'         => $this->relationLoaded('supplier') && $this->supplier ? [

@@ -406,6 +406,8 @@ class StrictManualGateWorkflowTest extends TestCase
         // GATE 8: PROCUREMENT FINALIZES ACTUAL PO (Manual Action by Procurement)
         // ─────────────────────────────────────────────────────────────
         $actualPoFinalizePayload = [
+            // Above the Actual PO high-value threshold a written reason is required.
+            'high_value_reason' => 'أمر شراء فعلي لتوريد المرحلة كاملة',
             'items' => [
                 [
                     'id' => $poItem->id,

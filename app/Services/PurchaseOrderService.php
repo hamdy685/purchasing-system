@@ -245,7 +245,15 @@ class PurchaseOrderService
 
             // Check if items or PO already exist for this PR
             $itemsInput = $options['items'] ?? null;
-            $targetPrItemIds = !empty($itemsInput) ? collect($itemsInput)->pluck('pr_item_id')->filter()->map(fn ($v) => (int) $v)->all() : [];
+            // A consolidated line carries the request lines it merges in 'sources'.
+            $targetPrItemIds = !empty($itemsInput)
+                ? collect($itemsInput)
+                    ->flatMap(fn ($input) => ! empty($input['sources'])
+                        ? collect($input['sources'])->pluck('pr_item_id')->all()
+                        : [$input['pr_item_id'] ?? null])
+                    ->filter()->map(fn ($v) => (int) $v)->unique()->values()->all()
+                : [];
+            $consolidation = $options['consolidation'] ?? null;
 
             $manualPoNumber = !empty($options['manual_po_number']) ? trim((string) $options['manual_po_number']) : null;
             $manualPrNumber = !empty($options['manual_pr_number']) ? trim((string) $options['manual_pr_number']) : null;
@@ -280,6 +288,19 @@ class PurchaseOrderService
                     if ($mergedSteelConflict) {
                         throw new \RuntimeException("البند [{$mergedSteelConflict->item_description}] تم إصدار أمر شراء سابق له بالفعل ضمن بند حديد مجمع (#{$mergedSteelConflict->purchaseOrderItem?->purchaseOrder?->po_number}).");
                     }
+
+                    // Lines held by an active department-consolidated PO line are ordered too.
+                    $consolidatedConflict = \App\Models\PurchaseOrderItemSource::active()
+                        ->whereIn('purchase_request_item_id', $targetPrItemIds)
+                        ->whereHas('purchaseOrderItem.purchaseOrder', function ($q) {
+                            $q->whereNotIn('status', ['REJECTED', 'CANCELLED', 'VOIDED', 'PO_DRAFT', 'RETURNED_TO_PROCUREMENT']);
+                        })
+                        ->with(['purchaseRequestItem', 'purchaseOrderItem.purchaseOrder'])
+                        ->first();
+
+                    if ($consolidatedConflict) {
+                        throw new \RuntimeException("البند [{$consolidatedConflict->purchaseRequestItem?->item_description}] تم إصدار أمر شراء سابق له بالفعل ضمن أمر شراء مجمع (#{$consolidatedConflict->purchaseOrderItem?->purchaseOrder?->po_number}).");
+                    }
                 } else {
                     // Fallback when no items array provided
                     $existingPo = PurchaseOrder::where('purchase_request_id', $pr->id)
@@ -304,9 +325,9 @@ class PurchaseOrderService
                             return $existingPo;
                         }
 
-                        $unassignedCount = $pr->items()->whereDoesntHave('purchaseOrderItems', function ($q) {
-                            $q->whereHas('purchaseOrder', fn ($poq) => $poq->whereNotIn('status', ['REJECTED', 'CANCELLED', 'VOIDED']));
-                        })->whereNot(fn ($q) => SteelConsolidationService::orderedThroughSteelComponent($q))->count();
+                        $unassignedCount = $pr->items()
+                            ->whereNot(fn ($q) => PurchaseOrderSourceService::orderedScope($q))
+                            ->count();
 
                         if ($unassignedCount === 0) {
                             throw new \RuntimeException('يوجد أمر شراء مصدر بالفعل لهذا الطلب (' . $existingPo->po_number . ').');
@@ -331,6 +352,9 @@ class PurchaseOrderService
                 'delivery_date' => !empty($options['delivery_date']) ? $options['delivery_date'] : now()->toDateString(),
                 'budget_code' => $options['budget_code'] ?? null,
                 'notes' => $options['notes'] ?? null,
+                'consolidation_policy' => $consolidation ? PurchaseOrder::CONSOLIDATION_POLICY_DEPARTMENT : null,
+                'consolidation_key' => $consolidation['key'] ?? null,
+                'idempotency_key' => $consolidation['idempotency_key'] ?? null,
             ]);
 
             // Copy or map PR items to PO items
@@ -338,7 +362,9 @@ class PurchaseOrderService
 
             if (! empty($itemsInput)) {
                 foreach ($itemsInput as $inputIndex => $input) {
-                    $prItemId = $input['pr_item_id'] ?? null;
+                    $sourcesInput = $input['sources'] ?? null;
+                    $isMergedLine = is_array($sourcesInput) && count($sourcesInput) > 1;
+                    $prItemId = $input['pr_item_id'] ?? ($sourcesInput[0]['pr_item_id'] ?? null);
                     $prItem = $prItemId ? $pr->items->firstWhere('id', $prItemId) : null;
                     [$itemReference, $region] = $this->requireReferenceFields(
                         $prItem?->item_reference,
@@ -362,7 +388,8 @@ class PurchaseOrderService
                     $isItemSupplementary = $pr->isComplementaryRequest() || !empty($input['is_supplementary']) || (bool)($prItem?->is_supplementary);
 
                     $poItem = $po->items()->create([
-                        'pr_item_id'      => $prItem?->id,
+                        // A line merging several request lines points at none of them directly (see its sources).
+                        'pr_item_id'      => $isMergedLine ? null : $prItem?->id,
                         'item_id'         => $input['item_id'] ?? $prItem?->item_id,
                         'item_description'=> $input['item_description'] ?? $prItem?->item_description ?? '',
                         'item_reference'  => $itemReference,
@@ -376,7 +403,7 @@ class PurchaseOrderService
                         'is_supplementary'=> $isItemSupplementary,
                     ]);
 
-                    if ($prItem && (float) $prItem->quantity !== $qty && $uom !== 'TON') {
+                    if ($prItem && ! $isMergedLine && (float) $prItem->quantity !== $qty && $uom !== 'TON') {
                         AuditLog::create([
                             'user_id'     => $user->id,
                             'entity_type' => PurchaseOrderItem::class,
@@ -387,6 +414,14 @@ class PurchaseOrderService
                             'new_value'   => (string) $qty,
                         ]);
                     }
+
+                    if (is_array($sourcesInput)) {
+                        app(DepartmentPoConsolidationService::class)->writeSources($user, $pr, $poItem, $sourcesInput, $consolidation['run_id'] ?? null);
+                    }
+                }
+
+                if ($consolidation) {
+                    app(DepartmentPoConsolidationService::class)->assertSingleSupplier($po);
                 }
             } else {
                 // When no items array supplied: copy unassigned PR items
@@ -641,6 +676,12 @@ class PurchaseOrderService
             throw new \RuntimeException('لا يمكن تعديل أمر شراء بهذه الحالة.');
         }
 
+        if ($po->isDepartmentConsolidated() && ! empty($data['supplier_id']) && (int) $data['supplier_id'] !== (int) $po->supplier_id) {
+            throw ValidationException::withMessages([
+                'supplier_id' => ['لا يمكن إضافة بند لمورد مختلف في أمر شراء مجمع. كل مورد له أمر شراء مستقل.'],
+            ]);
+        }
+
         return DB::transaction(function () use ($user, $po, $data) {
             $lockedPo = PurchaseOrder::where('id', $po->id)->lockForUpdate()->first();
 
@@ -663,6 +704,8 @@ class PurchaseOrderService
                 'unit_price'      => $unitPrice,
                 'line_total'      => $lineTotal,
                 'specifications'  => $data['specifications'] ?? null,
+                // Lines added to a consolidated PO always belong to its one supplier.
+                'supplier_id'     => $lockedPo->isDepartmentConsolidated() ? $lockedPo->supplier_id : null,
             ]);
 
             AuditLog::create([
@@ -693,6 +736,8 @@ class PurchaseOrderService
         if ($item->purchase_order_id !== $po->id) {
             throw new \InvalidArgumentException('Item does not belong to this purchase order.');
         }
+
+        $this->assertLineHasNoSources($item);
 
         return DB::transaction(function () use ($user, $po, $item) {
             $lockedPo = PurchaseOrder::where('id', $po->id)->lockForUpdate()->first();
@@ -727,6 +772,7 @@ class PurchaseOrderService
         // Delete items that were removed
         foreach ($existingItems as $existingId => $existingItem) {
             if (! $incomingIds->contains($existingId)) {
+                $this->assertLineHasNoSources($existingItem);
                 AuditLog::create([
                     'user_id'     => $user->id,
                     'entity_type' => PurchaseOrderItem::class,
@@ -815,7 +861,8 @@ class PurchaseOrderService
                     'specifications'   => $input['specifications'] ?? null,
                     'supplier_id'      => $input['supplier_id'] ?? $lockedPo->supplier_id ?? null,
                     'is_supplementary' => !empty($input['is_supplementary']),
-                    'supplement_batch' => !empty($input['supplement_batch']) ? (int) $input['supplement_batch'] : null,
+                    // The column is NOT NULL (default 1): a line added in the Actual PO used to fail on NULL here.
+                    'supplement_batch' => !empty($input['supplement_batch']) ? (int) $input['supplement_batch'] : 1,
                     'is_discount_applied' => !empty($input['is_discount_applied']),
                 ]);
 
@@ -860,7 +907,8 @@ class PurchaseOrderService
         ?string $region = null,
         ?string $discountType = null,
         ?float $discountPercentage = null,
-        ?array $discountItemIds = null
+        ?array $discountItemIds = null,
+        ?string $highValueReason = null
     ): PurchaseOrder {
         if ($po->status !== 'PENDING_ACTUAL_PO') {
             throw new \RuntimeException('لا يمكن إصدار أمر الشراء الفعلي إلا بعد اعتماد إذن الاستلام وانتقال الملف لمرحلة بانتظار الإصدار الفعلي.');
@@ -872,12 +920,15 @@ class PurchaseOrderService
             ]);
         }
 
-        return DB::transaction(function () use ($user, $po, $items, $notes, $headerSupplierId, $parcelReference, $region, $discountType, $discountPercentage, $discountItemIds) {
+        return DB::transaction(function () use ($user, $po, $items, $notes, $headerSupplierId, $parcelReference, $region, $discountType, $discountPercentage, $discountItemIds, $highValueReason) {
             $lockedPo = PurchaseOrder::where('id', $po->id)->lockForUpdate()->firstOrFail();
 
             if ($lockedPo->status !== 'PENDING_ACTUAL_PO') {
                 throw new \RuntimeException('تغيرت حالة أمر الشراء أثناء المعالجة. أعد المحاولة.');
             }
+
+            // A consolidated line stands for several request lines: only its id identifies it.
+            $isConsolidated = $lockedPo->isDepartmentConsolidated();
 
             // Update Purchase Request parcel reference and region if provided
             if ($lockedPo->purchaseRequest) {
@@ -909,12 +960,15 @@ class PurchaseOrderService
 
             foreach ($existingPoItems as $existingPoItem) {
                 // Find matching item in submitted $items by id, pr_item_id, item_id, or description
-                $matchKey = $inputCollection->search(function ($input, $key) use ($existingPoItem, $matchedInputKeys) {
+                $matchKey = $inputCollection->search(function ($input, $key) use ($existingPoItem, $matchedInputKeys, $isConsolidated) {
                     if ($matchedInputKeys->contains($key)) {
                         return false;
                     }
                     if (!empty($input['id']) && (int) $input['id'] === (int) $existingPoItem->id) {
                         return true;
+                    }
+                    if ($isConsolidated) {
+                        return false;
                     }
                     if (!empty($input['pr_item_id']) && (int) $input['pr_item_id'] === (int) $existingPoItem->pr_item_id) {
                         return true;
@@ -1004,11 +1058,17 @@ class PurchaseOrderService
                 ]);
             }
 
+            if ($isConsolidated) {
+                $finalizedItems = $this->keepSingleSupplier($lockedPo, $finalizedItems, $headerSupplierId);
+            }
+
             // ── Full items sync (preserves all items, sets actual quantities including 0) ──
             $this->syncPoItems($user, $lockedPo, $finalizedItems);
 
             // Authoritative recalculation of subtotal, discount, tax, and grand total
             $this->recalculateTotals($lockedPo, $discountType, $discountPercentage, $discountItemIds);
+
+            $highValue = $this->resolveHighValueAcknowledgement($lockedPo->refresh(), $highValueReason);
 
             // Determine effective PO header supplier:
             $allItemSuppliers = $lockedPo->items()->pluck('supplier_id')->filter()->unique();
@@ -1023,13 +1083,40 @@ class PurchaseOrderService
             }
 
             // Update PO header status and transition to ISSUED so accounting can see it
-            $lockedPo->update([
+            $lockedPo->update(array_merge([
                 'supplier_id'          => $newHeaderSupplierId,
                 'status'               => 'ISSUED',
                 'finalized_by_user_id' => $user->id,
                 'finalized_at'         => now(),
                 'finalization_notes'   => $notes,
-            ]);
+            ], $highValue ? [
+                'high_value_reason'                  => $highValue['reason'],
+                'high_value_threshold'               => $highValue['threshold'],
+                'high_value_acknowledged_by_user_id' => $user->id,
+                'high_value_acknowledged_at'         => now(),
+            ] : []));
+
+            if ($highValue) {
+                AuditLog::create([
+                    'user_id'     => $user->id,
+                    'entity_type' => PurchaseOrder::class,
+                    'entity_id'   => $lockedPo->id,
+                    'action'      => 'ACTUAL_PO_HIGH_VALUE_ACKNOWLEDGED',
+                    'field_name'  => 'high_value_reason',
+                    'old_value'   => null,
+                    'new_value'   => json_encode([
+                        'grand_total' => (float) $lockedPo->grand_total,
+                        'threshold'   => $highValue['threshold'],
+                        'reason'      => $highValue['reason'],
+                    ], JSON_UNESCAPED_UNICODE),
+                ]);
+                app(SystemEventService::class)->recordAction(
+                    $lockedPo,
+                    'ACTUAL_PO_HIGH_VALUE_ACKNOWLEDGED',
+                    "أمر شراء فعلي بقيمة تتجاوز الحد ({$lockedPo->po_number}). السبب: {$highValue['reason']}",
+                    ['event_type' => 'purchase_order.high_value', 'actor_user_id' => $user->id, 'metadata' => ['grand_total' => (float) $lockedPo->grand_total, 'threshold' => $highValue['threshold']]]
+                );
+            }
 
             if ($newHeaderSupplierId) {
                 $lockedPo->receipts()->update(['supplier_id' => $newHeaderSupplierId]);
@@ -1147,6 +1234,20 @@ class PurchaseOrderService
                 }
             }
 
+            if ($highValue) {
+                $generalManagers = User::where('is_active', true)
+                    ->whereHas('roles', fn ($q) => $q->where('slug', 'general_manager'))
+                    ->get();
+                $notificationService->queueUsers(
+                    $generalManagers->merge($targetAccountants),
+                    NotificationService::GM_HIGH_VALUE_ACTUAL_PO_TYPE,
+                    'أمر شراء فعلي يتجاوز حد القيمة',
+                    'تم إصدار أمر الشراء الفعلي ' . $lockedPo->po_number . ' بقيمة ' . number_format((float) $lockedPo->grand_total, 2)
+                        . ' جنيه (أعلى من ' . number_format($highValue['threshold'], 0) . '). السبب: ' . $highValue['reason'],
+                    $lockedPo
+                );
+            }
+
             app(NotificationService::class)->markEntityNotificationsAsRead($lockedPo, $user);
 
             return $lockedPo->fresh([
@@ -1217,11 +1318,7 @@ class PurchaseOrderService
                 $pr = $lockedPo->purchaseRequest;
                 $allPrItemsCount = $pr->items()->count();
                 $coveredPrItemsCount = $pr->items()
-                    ->where(function ($covered) {
-                        $covered->whereHas('purchaseOrderItems', function ($q) {
-                            $q->whereHas('purchaseOrder', fn ($poq) => $poq->whereNotIn('status', ['REJECTED', 'CANCELLED', 'VOIDED']));
-                        })->orWhere(fn ($q) => SteelConsolidationService::orderedThroughSteelComponent($q));
-                    })
+                    ->where(fn ($q) => PurchaseOrderSourceService::orderedScope($q))
                     ->count();
 
                 if ($allPrItemsCount > 0 && $coveredPrItemsCount >= $allPrItemsCount) {
@@ -1326,7 +1423,7 @@ class PurchaseOrderService
     /**
      * Convert rebar parcel or bar units to tons for commercial Purchase Order pricing.
      */
-    protected function normalizePoItemUnitAndQuantity(float $quantity, string $uom, ?string $specifications): array
+    public function normalizePoItemUnitAndQuantity(float $quantity, string $uom, ?string $specifications): array
     {
         $uomUpper = strtoupper(trim($uom));
         $cleanSpec = trim((string) ($specifications ?? ''));
@@ -1365,6 +1462,63 @@ class PurchaseOrderService
         }
 
         return [$quantity, $uom, $cleanSpec ?: null];
+    }
+
+    /**
+     * A consolidated Actual PO keeps one supplier: the whole order may move to another supplier,
+     * but its lines may never end up split between suppliers.
+     */
+    private function keepSingleSupplier(PurchaseOrder $po, array $finalizedItems, ?int $headerSupplierId): array
+    {
+        $suppliers = collect($finalizedItems)->pluck('supplier_id')->filter()->map(fn ($v) => (int) $v);
+        if ($headerSupplierId) {
+            $suppliers->push((int) $headerSupplierId);
+        }
+        $suppliers = $suppliers->unique()->values();
+
+        if ($suppliers->count() > 1) {
+            throw ValidationException::withMessages([
+                'supplier_id' => ['أمر الشراء المجمع لمورد واحد. يمكن تغيير مورد الأمر بالكامل، لكن لا يمكن جعل بند لمورد مختلف عن باقي البنود.'],
+            ]);
+        }
+
+        $target = (int) ($suppliers->first() ?? $po->supplier_id);
+
+        return array_map(fn (array $item) => array_merge($item, ['supplier_id' => $target]), $finalizedItems);
+    }
+
+    /**
+     * Above the high-value threshold the Actual PO needs a written reason (a warning, not a block).
+     *
+     * @return array{reason: string, threshold: float}|null
+     */
+    private function resolveHighValueAcknowledgement(PurchaseOrder $po, ?string $reason): ?array
+    {
+        $threshold = (float) config('procurement.actual_po_high_value_threshold', 500000);
+        $grandTotal = round((float) $po->grand_total, 2);
+
+        if ($threshold <= 0 || $grandTotal <= $threshold) {
+            return null;
+        }
+
+        $reason = trim((string) $reason);
+        if (mb_strlen($reason) < (int) config('procurement.actual_po_high_value_reason_min_length', 10)) {
+            throw new \App\Exceptions\HighValueReasonRequiredException($grandTotal, $threshold);
+        }
+
+        return ['reason' => $reason, 'threshold' => $threshold];
+    }
+
+    /**
+     * A line that consolidates request lines is their only record: set its quantity to 0 instead of deleting it.
+     */
+    private function assertLineHasNoSources(PurchaseOrderItem $item): void
+    {
+        if ($item->sources()->exists()) {
+            throw ValidationException::withMessages([
+                'items' => ["لا يمكن حذف البند [{$item->item_description}] لأنه بند مجمع من بنود طلب الشراء. يمكن تعديل كميته إلى صفر بدلاً من حذفه."],
+            ]);
+        }
     }
 
     /**

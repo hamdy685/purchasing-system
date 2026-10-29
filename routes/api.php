@@ -266,6 +266,9 @@ Route::middleware('auth:sanctum')->prefix('procurement')->group(function () {
     Route::post('/purchase-orders/batch', [ProcurementPurchaseOrderController::class, 'storeBatchPo'])
         ->middleware('permission:purchase_order.create');
 
+    Route::post('/purchase-orders/consolidation-preview', [ProcurementPurchaseOrderController::class, 'previewConsolidatedPos'])
+        ->middleware('permission:purchase_order.create');
+
     Route::post('/purchase-orders', [ProcurementPurchaseOrderController::class, 'storePo'])
         ->middleware('permission:purchase_order.create');
 

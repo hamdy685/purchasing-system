@@ -180,11 +180,7 @@ class ProcurementPurchaseRequestService
                         $eligibilityQuery->whereDoesntHave('purchaseOrders', function ($poQuery): void {
                             $poQuery->whereNotIn('status', ['REJECTED', 'CANCELLED', 'VOIDED']);
                         })->orWhereHas('items', function ($itemQuery): void {
-                            $itemQuery->whereDoesntHave('purchaseOrderItems', function ($poiQuery): void {
-                                $poiQuery->whereHas('purchaseOrder', function ($poQuery): void {
-                                    $poQuery->whereNotIn('status', ['REJECTED', 'CANCELLED', 'VOIDED']);
-                                });
-                            })->whereNot(fn ($steelQuery) => SteelConsolidationService::orderedThroughSteelComponent($steelQuery));
+                            $itemQuery->whereNot(fn ($orderedQuery) => PurchaseOrderSourceService::orderedScope($orderedQuery));
                         });
                     })->where(function ($statusQuery): void {
                         $statusQuery->where(function ($quotePath): void {

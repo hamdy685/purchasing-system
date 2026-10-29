@@ -5,8 +5,8 @@ namespace App\Services;
 use App\Models\AuditLog;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Models\PurchaseOrderItemSource;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -151,6 +151,17 @@ class SteelConsolidationService
             $consolidated->steelComponents()->create($component);
         }
 
+        // Department-consolidation provenance follows the lines into the «حديد» line, in tons.
+        foreach ($items as $item) {
+            $factor = $this->toTons(1.0, $item->uom) ?? 1.0;
+            foreach (PurchaseOrderItemSource::where('purchase_order_item_id', $item->id)->get() as $source) {
+                $source->update([
+                    'purchase_order_item_id' => $consolidated->id,
+                    'line_quantity' => round((float) $source->line_quantity * $factor, 4),
+                ]);
+            }
+        }
+
         PurchaseOrderItem::whereIn('id', $items->pluck('id'))->delete();
 
         AuditLog::create([
@@ -182,13 +193,6 @@ class SteelConsolidationService
      */
     public static function orderedThroughSteelComponent($prItemQuery): void
     {
-        $prItemQuery->whereExists(function ($q) {
-            $q->select(DB::raw(1))
-                ->from('steel_item_components')
-                ->join('purchase_order_items', 'purchase_order_items.id', '=', 'steel_item_components.purchase_order_item_id')
-                ->join('purchase_orders', 'purchase_orders.id', '=', 'purchase_order_items.purchase_order_id')
-                ->whereColumn('steel_item_components.purchase_request_item_id', 'purchase_request_items.id')
-                ->whereNotIn('purchase_orders.status', ['REJECTED', 'CANCELLED', 'VOIDED']);
-        });
+        PurchaseOrderSourceService::orderedThroughSteelComponent($prItemQuery);
     }
 }

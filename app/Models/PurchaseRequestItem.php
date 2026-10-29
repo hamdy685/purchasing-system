@@ -123,16 +123,16 @@ class PurchaseRequestItem extends Model
         return $this->hasMany(PurchaseOrderItem::class, 'pr_item_id');
     }
 
+    public function purchaseOrderItemSources(): HasMany
+    {
+        return $this->hasMany(PurchaseOrderItemSource::class, 'purchase_request_item_id');
+    }
+
     public function isOrdered(): bool
     {
-        return $this->purchaseOrderItems()
-            ->whereHas('purchaseOrder', function ($q) {
-                $q->whereNotIn('status', ['REJECTED', 'CANCELLED', 'VOIDED']);
-            })
-            ->exists()
-            // Merged into a consolidated "حديد" PO line.
-            || static::query()->whereKey($this->id)
-                ->where(fn ($q) => \App\Services\SteelConsolidationService::orderedThroughSteelComponent($q))
-                ->exists();
+        // Direct PO line, consolidated "حديد" component, or active consolidation source.
+        return static::query()->whereKey($this->id)
+            ->where(fn ($q) => \App\Services\PurchaseOrderSourceService::orderedScope($q))
+            ->exists();
     }
 }

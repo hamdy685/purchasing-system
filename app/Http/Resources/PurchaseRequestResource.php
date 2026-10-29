@@ -110,6 +110,9 @@ class PurchaseRequestResource extends JsonResource
             ] : null),
             'department_id' => $this->department_id,
             'target_department_id' => $this->target_department_id ?? $this->department_id,
+            // Department consolidation applies: the server issues one consolidated PO per supplier and scope.
+            'consolidated_po_required' => $this->resource instanceof \App\Models\PurchaseRequest
+                && \App\Services\PurchaseOrderSourceService::isMandatoryForRequest($this->resource),
             'site_engineer_user_id' => $this->site_engineer_user_id,
             'reviewer_user_id' => $this->reviewer_user_id,
             'target_department' => $this->relationLoaded('targetDepartment') && $this->targetDepartment ? [

@@ -135,6 +135,11 @@ class PurchaseOrderItem extends Model
         return $this->hasMany(SteelItemComponent::class, 'purchase_order_item_id')->orderBy('sort_order');
     }
 
+    public function sources(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PurchaseOrderItemSource::class, 'purchase_order_item_id')->orderBy('id');
+    }
+
     public function shipmentGroup(): BelongsTo
     {
         return $this->belongsTo(ShipmentGroup::class, 'shipment_group_id');
