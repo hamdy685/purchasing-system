@@ -518,6 +518,11 @@ class PurchaseReceiptService
         }
 
         return DB::transaction(function () use ($siteEngineer, $receipt, $items, $notes): PurchaseReceipt {
+            // Re-check under a row lock: an approval may have landed after this receipt was loaded.
+            if (PurchaseReceipt::whereKey($receipt->id)->lockForUpdate()->value('status') !== 'PENDING_SITE_ENGINEER') {
+                throw new \RuntimeException('لا يمكن تعديل إذن الاستلام بعد اعتماده أو إرساله للحسابات.');
+            }
+
             $receiptItems = $receipt->items->keyBy('id');
             foreach ($items as $input) {
                 $receiptItem = $receiptItems->get((int) ($input['id'] ?? 0));
@@ -602,6 +607,16 @@ class PurchaseReceiptService
         }
 
         return DB::transaction(function () use ($siteEngineer, $receipt, $notes, $pr): PurchaseReceipt {
+            // Serialize concurrent approvals (double tap / retried request) and re-check under the lock,
+            // so the approval history and procurement/accounting notifications are written once.
+            $lockedStatus = PurchaseReceipt::whereKey($receipt->id)->lockForUpdate()->value('status');
+            if ($lockedStatus === 'APPROVED') {
+                return $receipt->fresh(['supplier', 'purchaseOrder.supplier', 'purchaseOrder.items.item', 'purchaseRequest', 'warehouseKeeper', 'siteEngineer', 'items.purchaseOrderItem']);
+            }
+            if ($lockedStatus !== 'PENDING_SITE_ENGINEER') {
+                throw new \RuntimeException('إذن الاستلام ليس بانتظار اعتماد مهندس الموقع.');
+            }
+
             $receipt->loadMissing(['purchaseOrder.supplier', 'supplier']);
             $isInternalWarehouse = $receipt->isInternalWarehouse();
 

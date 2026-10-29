@@ -100,6 +100,57 @@ class PurchaseReceiptWorkflowTest extends TestCase
         ]);
     }
 
+    public function test_repeated_site_engineer_approval_is_recorded_once(): void
+    {
+        $orderItem = $this->purchaseOrder->items()->first();
+        $receipt = app(PurchaseReceiptService::class)->createByWarehouse(
+            $this->warehouse,
+            $this->purchaseOrder,
+            [['purchase_order_item_id' => $orderItem->id, 'received_quantity' => 8]],
+        );
+
+        // Two requests for the same receipt (double tap / retried request) each loaded it while still pending.
+        $firstRequest = PurchaseReceipt::findOrFail($receipt->id);
+        $secondRequest = PurchaseReceipt::findOrFail($receipt->id);
+
+        app(PurchaseReceiptService::class)->approveBySiteEngineer($this->siteEngineer, $firstRequest);
+        $again = app(PurchaseReceiptService::class)->approveBySiteEngineer($this->siteEngineer, $secondRequest);
+
+        $this->assertSame('APPROVED', $again->status);
+        $this->assertSame(1, \App\Models\ApprovalHistory::where('target_type', PurchaseReceipt::class)
+            ->where('target_id', $receipt->id)
+            ->where('to_state', 'APPROVED')
+            ->count());
+        $this->assertSame(1, Notification::where('user_id', $this->procurementManager->id)
+            ->where('type', 'grn_approved_pending_actual_po')
+            ->count());
+    }
+
+    public function test_site_engineer_cannot_edit_quantities_once_receipt_is_approved(): void
+    {
+        $orderItem = $this->purchaseOrder->items()->first();
+        $receipt = app(PurchaseReceiptService::class)->createByWarehouse(
+            $this->warehouse,
+            $this->purchaseOrder,
+            [['purchase_order_item_id' => $orderItem->id, 'received_quantity' => 8]],
+        );
+        $staleEdit = PurchaseReceipt::with('items')->findOrFail($receipt->id);
+        $receiptItemId = $staleEdit->items->first()->id;
+
+        app(PurchaseReceiptService::class)->approveBySiteEngineer($this->siteEngineer, PurchaseReceipt::findOrFail($receipt->id));
+
+        try {
+            app(PurchaseReceiptService::class)->updateBySiteEngineer($this->siteEngineer, $staleEdit, [
+                ['id' => $receiptItemId, 'received_quantity' => 3],
+            ]);
+            $this->fail('Editing an approved receipt must be rejected.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('بعد اعتماده', $e->getMessage());
+        }
+
+        $this->assertDatabaseHas('purchase_receipt_items', ['id' => $receiptItemId, 'received_quantity' => 8]);
+    }
+
     public function test_other_site_engineer_cannot_approve_assigned_receipt(): void
     {
         $otherEngineer = $this->makeUser('other-site@test', 'مهندس آخر', 'site_engineer', $this->siteEngineer->department_id);
