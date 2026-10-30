@@ -112,7 +112,7 @@ describe('Scenario 1: اختبار استرجاع وعرض البيانات (Dat
     });
 
     // Check tabs counter
-    const allTab = screen.getByRole('button', { name: /الكل\(90\)/i });
+    const allTab = screen.getByRole('button', { name: /الكل\s*\(90\)/i });
     expect(allTab).toBeInTheDocument();
 
     const draftsTab = screen.getByRole('button', { name: /مسودات \(17\)/i });

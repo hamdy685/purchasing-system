@@ -18,7 +18,7 @@ import { PurchaseRequest } from '../../types/purchaseRequest';
 import { parseApiError } from '../../utils/apiError';
 import { Button } from '../../components/ui/Button';
 import TableFilterBar from '../../components/ui/TableFilterBar';
-import { getDefaultDateFrom, getTodayInputDate, isDefaultTodayRange } from '../../utils/dateFilters';
+import { getDefaultDateFrom, getTodayInputDate } from '../../utils/dateFilters';
 
 const EMPLOYEE_EDITABLE_STATUSES = new Set(['DRAFT', 'SUBMITTED', 'UNDER_REVIEW']);
 const EMPLOYEE_REVIEW_STATUSES = new Set(['UNDER_REVIEW']);
@@ -183,101 +183,74 @@ export const PurchaseRequestsPage: React.FC = () => {
     return <TableSkeleton rows={6} columns={5} className="min-h-[260px]" />;
   }
 
-  const btnFilterVariant = (filter: string) => (activeFilter === filter ? 'primary' : 'outline');
-  const hasResultFilters = Boolean(searchQuery.trim() || dateFrom || dateTo || activeFilter !== 'ALL' || needsActionOnly);
+  // The default date window is not a filter the user chose, so it neither opens the filter panel nor counts as one.
+  const isDefaultDateWindow = isProcurementOrAdmin
+    ? !dateFrom && !dateTo
+    : dateFrom === defaultDateFrom && dateTo === todayInputDate;
+  const hasResultFilters = Boolean(searchQuery.trim() || !isDefaultDateWindow || activeFilter !== 'ALL' || needsActionOnly);
+
+  const statusTab = (key: string, label: string, count: number) => ({
+    key,
+    label,
+    count,
+    active: activeFilter === key,
+    onClick: () => setActiveFilter(key),
+  });
+  const statusTabs = [
+    { key: 'ALL', label: 'الكل', count: requests.length, active: activeFilter === 'ALL' && !needsActionOnly, onClick: () => { setActiveFilter('ALL'); setNeedsActionOnly(false); } },
+    { key: 'NEEDS_ACTION', label: 'يحتاج إجراء مني', count: requests.filter(requestNeedsAction).length, active: needsActionOnly, onClick: () => setNeedsActionOnly((current) => !current) },
+    statusTab('DRAFT', 'مسودات', requests.filter((r) => r.status === 'DRAFT').length),
+    statusTab('SUBMITTED', 'مُرسلة للمراجعة', requests.filter((r) => EMPLOYEE_SUBMITTED_STATUSES.has(r.status)).length),
+    statusTab('PENDING', 'قيد المراجعة', requests.filter((r) => EMPLOYEE_REVIEW_STATUSES.has(r.status)).length),
+    statusTab('APPROVED', 'معتمدة', requests.filter((r) => EMPLOYEE_APPROVED_STATUSES.has(r.status)).length),
+    statusTab('REJECTED', 'مرفوضة', requests.filter((r) => r.status === 'REJECTED').length),
+    statusTab('CANCELLED', 'ملغية', requests.filter((r) => r.status === 'CANCELLED').length),
+  ].filter((tab) => tab.key === 'ALL' || tab.active || tab.count > 0);
 
   return (
     <div className="space-y-3.5" dir="rtl">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-3">
-        <div>
-          <h1 className="text-xl font-black text-slate-100 flex items-center gap-2">
-            <span>📋</span> {isProcurementOrAdmin ? 'طلبات الشراء' : 'طلبات الشراء الخاصة بي'}
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            {isProcurementOrAdmin
-              ? 'سجل ومتابعة جميع طلبات الشراء في الشركة ومتابعة حالاتها.'
-              : 'سجل وتتبع جميع طلبات الشراء المقدمة من قبلك.'}
-          </p>
-        </div>
-
-        {hasPermission('purchase_request.create') && (
+      {/* The layout header already names the page; on phones the floating + button creates a request. */}
+      {hasPermission('purchase_request.create') && (
+        <div className="hidden sm:flex justify-end">
           <Link to="/requests/create">
             <Button variant="primary" size="md">
               + طلب شراء جديد
             </Button>
           </Link>
-        )}
-      </div>
+        </div>
+      )}
 
       <ErrorMessage error={error} onDismiss={() => setError(null)} />
 
-      {/* البحث السريع + التصفية */}
-      <div className="space-y-2.5">
-        <div className="rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-xl p-2.5 shadow-xl shadow-black/40 sm:p-3">
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <label htmlFor="purchase-request-quick-search" className="text-xs font-black text-slate-100">بحث سريع في الطلبات</label>
-            {searchQuery.trim() && (
-              <button type="button" onClick={() => setSearchQuery('')} className="min-h-7 shrink-0 rounded-lg px-2 text-xs font-bold text-gold-400 hover:bg-gold-500/10 cursor-pointer transition-colors" aria-label="مسح البحث">مسح</button>
-            )}
-          </div>
-          <div className="relative">
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-base text-gold-400" aria-hidden="true">⌕</span>
-            <input
-              id="purchase-request-quick-search"
-              type="search"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              onKeyDown={(event) => { if (event.key === 'Escape') setSearchQuery(''); }}
-              placeholder="ابحث برقم الطلب، الموظف، القسم، الصنف، قطعة الأرض أو المنطقة..."
-              enterKeyHint="search"
-              autoComplete="off"
-              className="min-h-10 w-full min-w-0 rounded-xl border border-white/10 bg-slate-950/90 pr-9 pl-4 py-2 text-xs text-slate-100 placeholder:text-xs placeholder:text-slate-500 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-500/20 transition-all shadow-inner"
-              aria-label="البحث السريع في طلبات الشراء"
-            />
-          </div>
-        </div>
+      <TableFilterBar
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="ابحث برقم الطلب أو الصنف أو القطعة أو المنطقة"
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onDateFromChange={setDateFrom}
+        onDateToChange={setDateTo}
+        onClear={() => { setSearchQuery(''); setDateFrom(isProcurementOrAdmin ? '' : defaultDateFrom); setDateTo(isProcurementOrAdmin ? '' : todayInputDate); setActiveFilter('ALL'); setNeedsActionOnly(false); }}
+        hasActiveFilters={hasResultFilters}
+        resultCount={filteredRequests.length}
+        totalCount={requests.length}
+        resultLabel="طلب شراء"
+      />
 
-        <TableFilterBar
-          dateFrom={dateFrom}
-          dateTo={dateTo}
-          onDateFromChange={setDateFrom}
-          onDateToChange={setDateTo}
-          onClear={() => { setSearchQuery(''); setDateFrom(''); setDateTo(''); setActiveFilter('ALL'); setNeedsActionOnly(false); }}
-          hasActiveFilters={Boolean(searchQuery || dateFrom || dateTo || activeFilter !== 'ALL' || needsActionOnly)}
-          resultCount={filteredRequests.length}
-          totalCount={requests.length}
-          resultLabel="طلب شراء"
-        />
-        {/* تصفية Tabs */}
-        <div className="border-b border-slate-800 pb-3">
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-            <Button variant={btnFilterVariant('ALL')} size="sm" className="w-full sm:w-auto" onClick={() => { setActiveFilter('ALL'); setNeedsActionOnly(false); }}>
-              الكل({requests.length})
-            </Button>
-            <Button variant={needsActionOnly ? 'primary' : 'outline'} size="sm" className="w-full sm:w-auto" onClick={() => setNeedsActionOnly(current => !current)}>
-              يحتاج إجراء مني ({requests.filter(requestNeedsAction).length})
-            </Button>
-            <Button variant={btnFilterVariant('DRAFT')} size="sm" className="w-full sm:w-auto" onClick={() => setActiveFilter('DRAFT')}>
-              مسودات ({requests.filter(r => r.status === 'DRAFT').length})
-            </Button>
-            <Button variant={btnFilterVariant('PENDING')} size="sm" className="w-full sm:w-auto" onClick={() => setActiveFilter('PENDING')}>
-              قيد المراجعة ({requests.filter(r => EMPLOYEE_REVIEW_STATUSES.has(r.status)).length})
-            </Button>
-            <Button variant={btnFilterVariant('SUBMITTED')} size="sm" className="w-full sm:w-auto" onClick={() => setActiveFilter('SUBMITTED')}>
-              مُرسلة للمراجعة ({requests.filter(r => EMPLOYEE_SUBMITTED_STATUSES.has(r.status)).length})
-            </Button>
-            <Button variant={btnFilterVariant('APPROVED')} size="sm" className="w-full sm:w-auto" onClick={() => setActiveFilter('APPROVED')}>
-              معتمدة ({requests.filter(r => EMPLOYEE_APPROVED_STATUSES.has(r.status)).length})
-            </Button>
-            <Button variant={btnFilterVariant('REJECTED')} size="sm" className="w-full sm:w-auto" onClick={() => setActiveFilter('REJECTED')}>
-              مرفوضة ({requests.filter(r => r.status === 'REJECTED').length})
-            </Button>
-            <Button variant={btnFilterVariant('CANCELLED')} size="sm" className="w-full sm:w-auto" onClick={() => setActiveFilter('CANCELLED')}>
-              ملغية ({requests.filter(r => r.status === 'CANCELLED').length})
-            </Button>
-          </div>
-        </div>
+      {/* Status tabs: empty ones are hidden unless selected */}
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label="تصفية حسب الحالة">
+        {statusTabs.map((tab) => (
+          <Button
+            key={tab.key}
+            variant={tab.active ? 'primary' : 'outline'}
+            size="sm"
+            className="!min-h-8 px-2.5 py-1 text-[11px]"
+            onClick={tab.onClick}
+            aria-pressed={tab.active}
+          >
+            {tab.label} ({tab.count})
+          </Button>
+        ))}
       </div>
 
       {/* Table Component */}

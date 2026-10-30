@@ -287,16 +287,24 @@ export const PurchaseRequestMobileCard: React.FC<RowProps> = React.memo(({
   const regionsDisplay = getSummaryRegions(pr);
   const quantitiesInfo = getSummaryQuantities(pr.items);
   const isOffice = pr.request_type === 'OFFICE_SUPPLIES';
-  const primaryItemDesc = itemNames[0] || (isOffice ? 'مستلزمات مكتبية' : 'مواد مشروعات');
   const lifecycle = getRequestLifecycle(pr);
+  const itemsText = itemNames.length > 0
+    ? itemNames.slice(0, 3).join('، ') + (itemNames.length > 3 ? ` و${itemNames.length - 3} غيرها` : '')
+    : (isOffice ? 'مستلزمات مكتبية' : 'مواد مشروعات');
+  // Mixed units have no meaningful total; the summary then only repeats the item count.
+  const hasQuantityTotal = itemNames.length <= 1 || !quantitiesInfo.display.includes('أصناف');
+  // The status badge already says it; show the last action only when it adds something.
+  const showLastAction = Boolean(lifecycle.lastAction)
+    && lifecycle.lastAction !== lifecycle.statusLabel
+    && lifecycle.lastAction !== PR_STATUS_LABELS[pr.status as keyof typeof PR_STATUS_LABELS];
 
   return (
     <article
-      className="rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-xl p-4 space-y-3 shadow-xl shadow-black/50 hover:shadow-2xl hover:border-gold-500/40 hover:-translate-y-1 transition-all duration-300"
+      className="rounded-2xl border border-white/10 bg-slate-900/80 p-3 space-y-2.5 shadow-lg shadow-black/40 hover:border-gold-500/40 transition-colors"
     >
       {/* Row 1: Request Number, Status Badge, and Date */}
-      <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-2.5">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 flex-wrap">
           <Link
             to={`/requests/${pr.id}`}
             className="font-mono text-sm font-black text-gold-400 hover:text-gold-200 hover:underline transition-colors"
@@ -316,10 +324,10 @@ export const PurchaseRequestMobileCard: React.FC<RowProps> = React.memo(({
       </div>
 
       {/* Row 2: Mandatory Core Data Strip (المنطقة ورقم القطعة) */}
-      <div className="flex items-center gap-2 text-xs flex-wrap bg-slate-950/80 border border-white/5 rounded-xl px-3 py-2 shadow-inner">
+      <div className="flex items-center gap-x-2 gap-y-1 text-xs flex-wrap text-slate-400">
         {isOffice ? (
           <span className="font-bold text-indigo-300 flex items-center gap-1 text-[11px]">
-            <span>🏢</span> مستلزمات مكتبية للمقر
+            <span>🏢</span> مستلزمات مكتبية
           </span>
         ) : (
           <>
@@ -336,7 +344,7 @@ export const PurchaseRequestMobileCard: React.FC<RowProps> = React.memo(({
         )}
         {pr.date_needed && (
           <>
-            <span className="text-slate-600 mr-auto">•</span>
+            <span className="text-slate-600">•</span>
             <div className="flex items-center gap-1 text-[11px] font-mono text-slate-400">
               <span>الاحتياج:</span>
               <strong className="text-amber-200">{pr.date_needed}</strong>
@@ -345,47 +353,26 @@ export const PurchaseRequestMobileCard: React.FC<RowProps> = React.memo(({
         )}
       </div>
 
-      {/* Row 3: Mandatory Core Data (الصنف والكمية) */}
-      <div className="rounded-xl border border-white/5 bg-slate-950/90 p-3 space-y-2 shadow-inner">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-slate-400 block">الصنف والمواد:</span>
-            <p className="text-xs font-bold text-slate-100 line-clamp-2 mt-0.5">
-              {primaryItemDesc}
-            </p>
-          </div>
-          <div className="text-left shrink-0">
-            <span className="text-[10px] font-bold text-slate-400 block">الكمية الإجمالية:</span>
-            <span className="font-mono font-black text-amber-300 text-xs">
-              {quantitiesInfo.display}
-            </span>
-            {quantitiesInfo.subtext && (
-              <span className="text-[9px] text-slate-400 block">{quantitiesInfo.subtext}</span>
+      {/* Row 3: items and total quantity */}
+      <div className="rounded-xl border border-white/5 bg-slate-950/80 px-3 py-2 space-y-1.5">
+        <div className="flex items-start justify-between gap-3">
+          <p className="min-w-0 flex-1 text-xs font-bold text-slate-100 line-clamp-2">
+            {itemsText}
+            {itemNames.length > 1 && (
+              <span className="mr-1 text-[10px] font-semibold text-slate-400">({itemNames.length} أصناف)</span>
             )}
-          </div>
+          </p>
+          {hasQuantityTotal && (
+            <span className="shrink-0 font-mono font-black text-amber-300 text-xs">{quantitiesInfo.display}</span>
+          )}
         </div>
-
-        {/* If multiple items exist */}
-        {itemNames.length > 1 && (
-          <div className="pt-2 border-t border-white/5 text-[11px] text-slate-400 flex items-center justify-between">
-            <span className="text-gold-400/90 font-semibold">
-              +{itemNames.length - 1} أصناف أخرى مشمولة في هذا الطلب
-            </span>
-            <Link to={`/requests/${pr.id}`} className="text-[10px] font-bold text-gold-300 hover:text-gold-200 hover:underline transition-colors">
-              عرض الكل ←
-            </Link>
-          </div>
+        {showLastAction && (
+          <p className="text-[11px] text-slate-400">{lifecycle.lastAction}</p>
         )}
-
-        {/* Last action */}
-        <div className="pt-2 border-t border-white/5 text-[11px] flex items-center justify-between">
-          <span className="text-slate-400">آخر إجراء:</span>
-          <span className="text-slate-200 font-semibold">{lifecycle.lastAction}</span>
-        </div>
       </div>
 
       {/* Row 4: Actions Toolbar */}
-      <div className="flex items-center gap-2 pt-1 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         <Link to={`/requests/${pr.id}`} className="flex-1">
           <Button variant="secondary" size="sm" className="w-full text-xs font-bold py-1.5">
             عرض التفاصيل

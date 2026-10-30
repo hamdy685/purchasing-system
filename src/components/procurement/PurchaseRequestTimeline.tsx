@@ -5,6 +5,8 @@ import { getRequestLifecycle } from '../purchase-requests/PurchaseRequestTable';
 export interface PurchaseRequestTimelineProps {
   request: PurchaseRequest;
   compact?: boolean;
+  /** One line per stage instead of the card grid (request details page). */
+  listView?: boolean;
 }
 
 export type TimelineCardState = 'COMPLETED' | 'ACTIVE' | 'PENDING' | 'REJECTED';
@@ -266,6 +268,8 @@ export const generateTimelineCards = (request: PurchaseRequest): TimelineCardIte
     card3State = 'COMPLETED';
   }
 
+  const preliminarySkipped = card3State === 'COMPLETED' && historyHas(request, ['FAST_TRACK_PRICING_SKIPPED_PRELIMINARY']);
+
   cards.push({
     id: 'step-3-exec-initial',
     stepNumber: 3,
@@ -275,7 +279,7 @@ export const generateTimelineCards = (request: PurchaseRequest): TimelineCardIte
     assignee: 'م. محمد (المدير العام)',
     state: card3State,
     description: 'الموافقة الإدارية المبدئية للتصريح لإدارة المشتريات بالبدء في التسعير.',
-    badgeText: card3State === 'COMPLETED' ? 'موافقة مبدئية ✅' : card3State === 'ACTIVE' ? 'بانتظار القرار 🔵' : card3State === 'REJECTED' ? 'مرفوض ❌' : 'بانتظار دوره ⚪',
+    badgeText: preliminarySkipped ? 'تم التخطي (تسعير مباشر) ⏭' : card3State === 'COMPLETED' ? 'موافقة مبدئية ✅' : card3State === 'ACTIVE' ? 'بانتظار القرار 🔵' : card3State === 'REJECTED' ? 'مرفوض ❌' : 'بانتظار دوره ⚪',
     icon: '👔',
     actionNote: card3State === 'ACTIVE' ? 'معروض الآن على طاولة المدير التنفيذي للتصريح ببدء إجراءات المشتريات.' : undefined,
   });
@@ -570,7 +574,9 @@ export const generateTimelineCards = (request: PurchaseRequest): TimelineCardIte
     role: 'إدارة المشتريات',
     assignee: 'مدير المشتريات',
     state: cardActualPoState,
-    description: '💡 تم الفحص الهندسي بنجاح، وتم إصدار أمر الشراء الفعلي (Actual PO) وبكده تكون خلصت وتمت بنجاح.',
+    description: cardActualPoState === 'COMPLETED'
+      ? '💡 تم الفحص الهندسي بنجاح، وتم إصدار أمر الشراء الفعلي (Actual PO) وبكده تكون خلصت وتمت بنجاح.'
+      : 'إصدار أمر الشراء الفعلي بالكميات المستلمة بعد الفحص الهندسي لإغلاق المعاملة.',
     badgeText:
       cardActualPoState === 'COMPLETED'
         ? 'أمر شراء فعلي معتمد (100%) ✅'
@@ -741,6 +747,7 @@ export const getActionGuidance = (request: PurchaseRequest): { text: string; bg:
 export const PurchaseRequestTimeline: React.FC<PurchaseRequestTimelineProps> = ({
   request,
   compact = false,
+  listView = false,
 }) => {
   const isDirect = isDirectProcurement(request);
   const isQuotes = isQuotesProcurement(request);
@@ -757,6 +764,76 @@ export const PurchaseRequestTimeline: React.FC<PurchaseRequestTimelineProps> = (
     isActualPoComplete || completedCardsCount >= cards.length
       ? 100
       : Math.round((completedCardsCount / Math.max(cards.length, 1)) * 100);
+
+  if (listView) {
+    return (
+      <section className="space-y-3" dir="rtl" aria-label="شريط تتبع دورة عمل طلب الشراء">
+        <div className={`flex items-start gap-2.5 rounded-xl border p-3 text-xs font-semibold leading-6 ${guidance.bg}`}>
+          <span className="text-lg shrink-0 select-none">{guidance.icon}</span>
+          <p className="flex-1">{guidance.text}</p>
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-black text-slate-100">مراحل الطلب</h3>
+          {!isRejected && (
+            <span className="text-[11px] font-bold text-slate-400">
+              {completedCardsCount} من {cards.length}
+            </span>
+          )}
+        </div>
+
+        <ol className="space-y-1.5">
+          {cards.map((card) => {
+            const isCompleted = card.state === 'COMPLETED';
+            const isActive = card.state === 'ACTIVE';
+            const isCardRejected = card.state === 'REJECTED';
+            const marker = isCompleted ? '✓' : isCardRejected ? '✕' : isActive ? '●' : String(card.stepNumber);
+            const markerStyle = isCompleted
+              ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+              : isCardRejected
+              ? 'bg-rose-500/20 border-rose-500/50 text-rose-300'
+              : isActive
+              ? 'bg-cyan-500/30 border-cyan-400 text-cyan-200'
+              : 'bg-slate-900 border-slate-700 text-slate-500';
+
+            return (
+              <li
+                key={card.id}
+                aria-current={isActive ? 'step' : undefined}
+                className={`rounded-xl border px-3 py-2 ${
+                  isActive ? 'border-cyan-500/50 bg-cyan-950/30' : isCardRejected ? 'border-rose-500/40 bg-rose-950/20' : 'border-slate-800 bg-slate-950/50'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border font-mono text-[11px] font-black ${markerStyle}`}>
+                    {marker}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-xs font-bold ${isCompleted || isActive ? 'text-slate-100' : 'text-slate-400'}`}>{card.title}</p>
+                    <p className="text-[10px] text-slate-500">{card.assignee || card.role}</p>
+                  </div>
+                  {(isActive || isCardRejected || card.badgeText.includes('تخطي')) && (
+                    <span className={`shrink-0 text-[10px] font-bold ${isCardRejected ? 'text-rose-300' : isActive ? 'text-cyan-300' : 'text-slate-400'}`}>
+                      {card.badgeText.replace(/[✅🔵❌⚪⏭]/gu, '').trim()}
+                    </span>
+                  )}
+                </div>
+                {isActive && card.checklists && card.checklists.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 pr-8 text-[10px] text-slate-400">
+                    {card.checklists.map((chk, cIdx) => (
+                      <span key={cIdx} className={chk.isCompleted ? 'text-emerald-300' : ''}>
+                        {chk.isCompleted ? '✔' : '⏳'} {chk.label}: {chk.statusText}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-4" dir="rtl" aria-label="شريط تتبع دورة عمل طلب الشراء">

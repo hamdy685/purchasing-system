@@ -8,6 +8,7 @@ import { Card } from './Card';
 import { TableSkeleton } from './StateFeedback';
 import ErrorMessage from '../ErrorMessage';
 import { parseApiError } from '../../utils/apiError';
+import { PR_ACTION_LABELS, PR_STATUS_LABELS } from '../../types/purchaseRequest';
 
 interface Props {
   entity: 'purchase_request' | 'purchase_order';
@@ -26,6 +27,9 @@ const ACTION_LABELS: Record<string, string> = {
   REJECTED_BY_REVIEWER: 'رفض رئيس القسم',
   PO_CREATED: 'إنشاء أمر الشراء',
   PO_ISSUED: 'إصدار أمر الشراء',
+  FAST_TRACK_PRICING_SKIPPED_PRELIMINARY: 'تسعير مباشر وتخطي الاعتماد المبدئي',
+  DIRECT_EXECUTIVE_REVIEW_REQUIRED: 'تسعير المشتريات وإرساله للمدير التنفيذي',
+  APPROVED_BY_REVIEWER_FAST_TRACK: 'اعتماد رئيس القسم (مسار سريع)',
 };
 
 const formatDateTime = (event: SystemEvent) => {
@@ -46,7 +50,7 @@ const stateLabel = (state?: string | null) => {
     APPROVED_BY_REVIEWER: 'اعتماد رئيس القسم', APPROVED_BY_PROCUREMENT: 'معتمد من المشتريات',
     PO_DRAFT: 'مسودة أمر شراء', ISSUED: 'صادر', REJECTED: 'مرفوض',
   };
-  return labels[state] || state;
+  return labels[state] || PR_STATUS_LABELS[state as keyof typeof PR_STATUS_LABELS] || state;
 };
 
 export const SystemEventTimeline: React.FC<Props> = ({
@@ -124,12 +128,12 @@ export const SystemEventTimeline: React.FC<Props> = ({
                 <span className="absolute right-0 top-1.5 flex h-4 w-4 items-center justify-center rounded-full border-4 border-slate-900 bg-emerald-400 text-[8px] font-black text-slate-950 shadow-sm">✓</span>
                 <div className="flex flex-col gap-1 rounded-xl border border-white/10 bg-slate-950/60 p-3 shadow-inner">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs font-black text-gold-300">{ACTION_LABELS[event.action] || event.action}</span>
+                    <span className="text-xs font-black text-gold-300">{ACTION_LABELS[event.action] || PR_ACTION_LABELS[event.action] || event.action}</span>
                     <time className="text-[10px] font-semibold text-slate-500" dir="ltr">{formatDateTime(event)}</time>
                   </div>
                   <div className="text-[11px] text-slate-300">المنفذ: <span className="font-bold text-slate-100">{event.actor?.name || 'النظام'}</span></div>
                   {event.description && <p className="text-xs leading-5 text-slate-400">{event.description}</p>}
-                  {(event.from_state || event.to_state) && (
+                  {(event.from_state || event.to_state) && event.from_state !== event.to_state && (
                     <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
                       {event.from_state && <span className="rounded-md bg-white/[0.05] border border-white/10 px-2 py-0.5 text-slate-300">من: {stateLabel(event.from_state)}</span>}
                       {event.to_state && <span className="rounded-md bg-gold-950/80 border border-gold-500/40 px-2 py-0.5 text-gold-300">إلى: {stateLabel(event.to_state)}</span>}

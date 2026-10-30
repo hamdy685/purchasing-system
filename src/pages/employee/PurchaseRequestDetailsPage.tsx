@@ -31,7 +31,7 @@ import PurchaseRequestTimeline from '../../components/procurement/PurchaseReques
 import OfficeReceiptModal from '../../components/purchase-requests/OfficeReceiptModal';
 import { CreateSupplementModal } from '../../components/supplements/CreateSupplementModal';
 import { getUnitLabel } from '../../utils/units';
-import { getSummaryParcels, getSummaryRegions, getSummaryQuantities, getItemsSummaryDisplay, getSummaryProject } from '../../utils/formatRequestSummary';
+import { getSummaryParcels, getSummaryRegions, getSummaryQuantities, getSummaryProject } from '../../utils/formatRequestSummary';
 import { UnifiedNotesCard } from '../../components/common/UnifiedNotesCard';
 import { formatCleanQty } from '../../utils/numberFormat';
 import { formatRebarDisplay, extractRebarInfo } from '../../utils/rebar';
@@ -182,12 +182,19 @@ export const PurchaseRequestDetailsPage: React.FC = () => {
       'APPROVED_BY_PROCUREMENT',
     ].includes(requestData.status) || Boolean(issuedPos.length > 0);
 
-  const itemNames = requestData.items?.map((item) => item.item_description || item.item?.name).filter(Boolean) || [];
-  const itemsDisplay = getItemsSummaryDisplay(requestData.items);
-  const parcelsDisplay = getSummaryParcels(requestData, 'غير مسجل');
-  const regionsDisplay = getSummaryRegions(requestData, 'غير مسجلة');
-  const projectDisplay = getSummaryProject(requestData, 'غير مسجل');
+  const items = requestData.items || [];
+  const parcelsDisplay = getSummaryParcels(requestData, '—');
+  const regionsDisplay = getSummaryRegions(requestData, '—');
+  const projectDisplay = getSummaryProject(requestData, '');
   const quantitiesInfo = getSummaryQuantities(requestData.items);
+  const hasQuantityTotal = items.length <= 1 || !quantitiesInfo.display.includes('أصناف');
+  const lifecycle = getRequestLifecycle(requestData);
+  // Per-item plot/region is only worth repeating when the lines differ from each other.
+  const hasMixedLocations =
+    new Set(items.map((item) => item.item_reference || '')).size > 1 ||
+    new Set(items.map((item) => item.region || '')).size > 1;
+  const receiverName = requestData.site_engineer?.name;
+  const requesterIsReceiver = isOffice || (Boolean(receiverName) && requestData.site_engineer?.id === requestData.user_id);
 
   return (
     <div className="space-y-3.5 pb-24 md:pb-6 animate-fade-in" dir="rtl">
@@ -281,56 +288,56 @@ export const PurchaseRequestDetailsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-        <div className="flex items-center space-x-3 space-x-reverse">
-          <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-black font-mono text-cyan-400">{requestData.request_number}</h1>
-              <PurchaseRequestStatusBadge status={requestData.status} />
-              {isOffice ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-950/90 text-indigo-300 border border-indigo-700/60 shadow-sm">
-                  <span>🏢</span> مستلزمات مكتبية للشركة
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-950/90 text-amber-300 border border-amber-700/60 shadow-sm">
-                  <span>🏗️</span> مشتريات مشروع / موقع
-                </span>
-              )}
-            </div>
-          </div>
+      {/* Page Header: the layout above already has the page title and back button */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h1 className="text-lg sm:text-xl font-black font-mono text-cyan-400">{requestData.request_number}</h1>
+          <PurchaseRequestStatusBadge status={lifecycle.statusKey} />
+          {lifecycle.poNumber && (
+            <span className="font-mono text-[11px] text-cyan-300 font-bold bg-cyan-950/80 border border-cyan-800/80 rounded px-1.5 py-0.5">
+              {lifecycle.poNumber}
+            </span>
+          )}
+          {isOffice && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-950/90 text-indigo-300 border border-indigo-700/60">
+              🏢 مستلزمات مكتبية
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button variant="secondary" size="sm" onClick={() => setIsPrintModalOpen(true)}
             className="bg-cyan-950/60 text-cyan-300 border-cyan-800/60 hover:bg-cyan-900/60 flex items-center gap-1.5">
             🖨️ طباعة
           </Button>
-          {canRequestSupplement && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => setIsSupplementModalOpen(true)}
-              className="bg-amber-600 hover:bg-amber-500 text-white font-bold flex items-center gap-1.5 shadow-md shadow-amber-900/30"
-            >
-              <span>➕</span> طلب كمية إضافية (كمالة)
-            </Button>
-          )}
-          {canEdit && (
-            <Link to={`/requests/${requestData.id}/edit`}>
-              <Button variant="warning" size="sm">تعديل</Button>
-            </Link>
-          )}
-          {canSubmit && (
-            <Button variant="primary" size="sm" onClick={() => setIsSubmitModalOpen(true)}>
-              {isReviewer ? '🚀 اعتماد وإرسال للمدير التنفيذي' : 'تقديم'}
-            </Button>
-          )}
-          {canDelete && (
-            <Button variant="danger" size="sm" onClick={() => setIsDeleteModalOpen(true)}>
-              حذف
-            </Button>
-          )}
-          {canCancel && (
+          {/* On phones these live in the sticky bar at the bottom */}
+          <div className="hidden sm:flex items-center gap-2">
+            {canRequestSupplement && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setIsSupplementModalOpen(true)}
+                className="bg-amber-600 hover:bg-amber-500 text-white font-bold flex items-center gap-1.5 shadow-md shadow-amber-900/30"
+              >
+                <span>➕</span> طلب كمية إضافية (كمالة)
+              </Button>
+            )}
+            {canEdit && (
+              <Link to={`/requests/${requestData.id}/edit`}>
+                <Button variant="warning" size="sm">تعديل</Button>
+              </Link>
+            )}
+            {canSubmit && (
+              <Button variant="primary" size="sm" onClick={() => setIsSubmitModalOpen(true)}>
+                {isReviewer ? '🚀 اعتماد وإرسال للمدير التنفيذي' : 'تقديم'}
+              </Button>
+            )}
+            {canDelete && (
+              <Button variant="danger" size="sm" onClick={() => setIsDeleteModalOpen(true)}>
+                حذف
+              </Button>
+            )}
+          </div>
+          {canCancel && requestData.status !== 'REJECTED' && (
             <Button
               variant="danger"
               size="sm"
@@ -340,129 +347,69 @@ export const PurchaseRequestDetailsPage: React.FC = () => {
               <span>🚫</span> إلغاء الطلب
             </Button>
           )}
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              if (window.history.length > 2) {
-                navigate(-1);
-              } else {
-                navigate('/requests');
-              }
-            }}
-          >
-            ← العودة
-          </Button>
         </div>
       </div>
 
-      {/* ── شريط البيانات الأساسية (المشروع، المنطقة، رقم القطعة، الأصناف، والكمية) ── */}
-      <div className="rounded-2xl border-2 border-amber-500/40 bg-gradient-to-r from-slate-900 via-amber-950/20 to-slate-900 p-3.5 sm:p-4 shadow-xl">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
-          {/* 1. المشروع */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
-            <span className="text-[10px] font-bold text-slate-400 block">المشروع:</span>
-            <span className="text-sm sm:text-base font-black text-slate-100 block mt-0.5">
-              {projectDisplay}
-            </span>
+      {/* Request data: one card, no field repeated elsewhere on the page */}
+      <Card className="p-3 sm:p-4">
+        <dl className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-3 text-xs">
+          {!isOffice && (
+            <div>
+              <dt className="text-[10px] text-slate-400 font-semibold">قطعة الأرض</dt>
+              <dd className="font-black font-mono text-cyan-300 mt-0.5">{parcelsDisplay}</dd>
+            </div>
+          )}
+          {!isOffice && (
+            <div>
+              <dt className="text-[10px] text-slate-400 font-semibold">المنطقة</dt>
+              <dd className="font-black text-amber-300 mt-0.5">{regionsDisplay}</dd>
+            </div>
+          )}
+          {projectDisplay && (
+            <div>
+              <dt className="text-[10px] text-slate-400 font-semibold">المشروع</dt>
+              <dd className="font-bold text-slate-200 mt-0.5">{projectDisplay}</dd>
+            </div>
+          )}
+          <div>
+            <dt className="text-[10px] text-slate-400 font-semibold">القسم المستهدف</dt>
+            <dd className="font-bold text-slate-200 mt-0.5">{requestData.target_department?.name || requestData.department?.name || 'غير محدد'}</dd>
           </div>
-
-          {/* 2. رقم قطعة الأرض */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
-            <span className="text-[10px] font-bold text-slate-400 block">رقم قطعة الأرض:</span>
-            <span className="text-sm sm:text-base font-black font-mono text-cyan-300 block mt-0.5">
-              {parcelsDisplay}
-            </span>
+          <div>
+            <dt className="text-[10px] text-slate-400 font-semibold">{requesterIsReceiver ? 'مقدم الطلب والمستلم' : 'مقدم الطلب'}</dt>
+            <dd className="font-bold text-slate-200 mt-0.5">{requestData.requester?.name || '—'}</dd>
           </div>
-
-          {/* 3. المنطقة */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
-            <span className="text-[10px] font-bold text-slate-400 block">المنطقة الجغرافية:</span>
-            <span className="text-sm sm:text-base font-black text-amber-300 block mt-0.5">
-              {regionsDisplay}
-            </span>
+          {!requesterIsReceiver && (
+            <div>
+              <dt className="text-[10px] text-slate-400 font-semibold">المستلم / مهندس الموقع</dt>
+              <dd className="font-bold text-slate-200 mt-0.5">{receiverName || 'يحدده المراجع عند الاعتماد'}</dd>
+            </div>
+          )}
+          <div>
+            <dt className="text-[10px] text-slate-400 font-semibold">تاريخ الاحتياج</dt>
+            <dd className="font-bold text-slate-200 mt-0.5 font-mono">{requestData.date_needed || '—'}</dd>
           </div>
-
-          {/* 4. الأصناف المطلوبة */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
-            <span className="text-[10px] font-bold text-slate-400 block">الأصناف المطلوبة ({requestData.items?.length || 0}):</span>
-            <span className="text-xs sm:text-sm font-black text-slate-100 block mt-0.5 truncate" title={itemNames.join('، ')}>
-              {itemsDisplay}
-            </span>
+          <div>
+            <dt className="text-[10px] text-slate-400 font-semibold">تاريخ الإنشاء</dt>
+            <dd className="font-bold text-slate-200 mt-0.5 font-mono">{new Date(requestData.created_at).toLocaleDateString('ar-EG')}</dd>
           </div>
-
-          {/* 5. الكمية الإجمالية */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 col-span-2 sm:col-span-1">
-            <span className="text-[10px] font-bold text-slate-400 block">الكمية الإجمالية:</span>
-            <span className="text-sm sm:text-base font-black font-mono text-amber-300 block mt-0.5" title={quantitiesInfo.tooltip}>
-              {quantitiesInfo.display}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Summary metadata */}
-      <Card className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-        <div>
-          <div className="text-[10px] text-slate-400 font-semibold">نوع الطلب</div>
-          <div className="font-bold text-slate-200 mt-1 flex items-center gap-1">
-            {isOffice ? '🏢 مستلزمات مكتبية للشركة' : '🏗️ مشتريات مشروعات ومواقع'}
-          </div>
-        </div>
-        <div>
-          <div className="text-[10px] text-slate-400 font-semibold">القسم المستهدف</div>
-          <div className="font-bold text-slate-200 mt-1">{requestData.target_department?.name || requestData.department?.name || 'غير محدد'}</div>
-        </div>
-        <div>
-          <div className="text-[10px] text-slate-400 font-semibold">مقدم الطلب (المستلم)</div>
-          <div className="font-bold text-slate-200 mt-1">{requestData.requester?.name}</div>
-        </div>
-        <div>
-          <div className="text-[10px] text-slate-400 font-semibold">الحالة</div>
-          <div className="font-bold text-slate-200 mt-1 flex items-center gap-1.5 flex-wrap">
-            <span>{getRequestLifecycle(requestData).statusLabel}</span>
-            {getRequestLifecycle(requestData).poNumber && (
-              <span className="font-mono text-[10px] text-cyan-300 font-bold bg-cyan-950/80 border border-cyan-800/80 rounded px-1.5 py-0.5">
-                {getRequestLifecycle(requestData).poNumber}
-              </span>
-            )}
-          </div>
-        </div>
-        <div>
-          <div className="text-[10px] text-slate-400 font-semibold">تاريخ الاحتياج</div>
-          <div className="font-bold text-slate-200 mt-1 font-mono">{requestData.date_needed || '-'}</div>
-        </div>
-        <div>
-          <div className="text-[10px] text-slate-400 font-semibold">تاريخ الإنشاء</div>
-          <div className="font-bold text-slate-200 mt-1 font-mono">
-            {new Date(requestData.created_at).toLocaleDateString('ar-EG')}
-          </div>
-        </div>
-        <div>
-          <div className="text-[10px] text-slate-400 font-semibold">مسؤول الاستلام / مهندس الموقع</div>
-          <div className="font-bold text-slate-200 mt-1">
-            {isOffice
-              ? 'مقدم الطلب (استلام مكتبي مباشر)'
-              : requestData.site_engineer?.name
-                ? `${requestData.site_engineer.name}${requestData.is_general_manager_requester ? ' (اختيار المدير التنفيذي)' : ''}`
-                : 'يحدده المراجع عند الاعتماد'}
-          </div>
-        </div>
-        <div className="col-span-2 md:col-span-4">
-          <div className="text-[10px] text-slate-400 font-semibold">ملاحظات</div>
-          <div className="font-bold text-slate-200 mt-1">{requestData.notes || '-'}</div>
-        </div>
+        </dl>
       </Card>
 
       <Card className="border-cyan-900/60 bg-slate-950/40 p-3 sm:p-4">
-        <PurchaseRequestTimeline request={requestData} />
+        <PurchaseRequestTimeline request={requestData} listView />
       </Card>
 
       {/* Line البنود */}
       <div className="space-y-2.5">
-        <h3 className="flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-200">
-          <span>📦</span> بنود ومواد طلب الشراء التفصيلية
-        </h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-black text-slate-100">البنود ({items.length})</h3>
+          {items.length > 1 && hasQuantityTotal && (
+            <span className="font-mono text-xs font-black text-amber-300" title={quantitiesInfo.tooltip}>
+              الإجمالي: {quantitiesInfo.display}
+            </span>
+          )}
+        </div>
         <div className="hidden sm:block">
           <Table>
             <TableHeader>
@@ -502,29 +449,27 @@ export const PurchaseRequestDetailsPage: React.FC = () => {
             </TableBody>
           </Table>
         </div>
-        <div className="space-y-2.5 sm:hidden">
-          {requestData.items?.length ? requestData.items.map((item, index) => (
-            <article key={`mobile-${item.id}`} className="rounded-xl border border-slate-800 bg-slate-900/70 p-3 space-y-2">
-              <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-2">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold text-cyan-300">بند #{index + 1}</p>
-                  <p className="mt-0.5 break-words text-sm font-black text-slate-100">{item.item_description || 'بدون وصف'}</p>
+        <div className="space-y-2 sm:hidden">
+          {items.length ? items.map((item) => {
+            const quantityText = formatRebarDisplay(item.quantity, item.uom, item.specifications) || `${formatCleanQty(item.quantity)} ${getUnitLabel(item.uom)}`;
+            const specs = item.specifications?.trim();
+            const showSpecs = Boolean(specs) && !quantityText.includes(specs as string);
+            return (
+              <article key={`mobile-${item.id}`} className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2.5 space-y-1">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 break-words text-sm font-black text-slate-100">{item.item_description || 'بدون وصف'}</p>
+                  <span className="shrink-0 font-mono text-xs font-bold text-emerald-300">{quantityText}</span>
                 </div>
-                <span className="shrink-0 font-mono text-xs font-bold text-cyan-300">🏷️ {item.item_reference || (isOffice ? 'مقر الشركة' : '—')}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs pt-0.5">
-                {!isOffice && <span className="text-amber-300 font-bold">📍 {item.region || '—'}</span>}
-                <span className="font-bold text-emerald-300 font-mono">
-                  ⚖️ {formatRebarDisplay(item.quantity, item.uom, item.specifications) || `${formatCleanQty(item.quantity)} ${getUnitLabel(item.uom)}`}
-                </span>
-              </div>
-              {item.specifications && (
-                <p className="text-[11px] text-slate-400 border-t border-slate-800/60 pt-1">
-                  المواصفات: {item.specifications}
-                </p>
-              )}
-            </article>
-          )) : (
+                {hasMixedLocations && !isOffice && (
+                  <p className="text-[11px] text-slate-400">
+                    قطعة <span className="font-mono text-cyan-300">{item.item_reference || '—'}</span>
+                    {' · '}المنطقة <span className="text-amber-300">{item.region || '—'}</span>
+                  </p>
+                )}
+                {showSpecs && <p className="text-[11px] text-slate-400">{specs}</p>}
+              </article>
+            );
+          }) : (
             <div className="rounded-xl border border-dashed border-slate-700 px-3 py-6 text-center text-xs text-slate-400">لا توجد بنود مرتبطة بالطلب.</div>
           )}
         </div>
@@ -549,15 +494,14 @@ export const PurchaseRequestDetailsPage: React.FC = () => {
             </Button>
           )}
           {canRequestSupplement && (
-            <Link to="/supplementary-requests" className="flex-1">
-              <Button
-                variant="primary"
-                size="md"
-                className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs min-h-10 flex items-center justify-center gap-1"
-              >
-                <span>➕</span> طلب كمية إضافية
-              </Button>
-            </Link>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setIsSupplementModalOpen(true)}
+              className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs min-h-10 flex items-center justify-center gap-1"
+            >
+              <span>➕</span> طلب كمية إضافية
+            </Button>
           )}
           {canEdit && (
             <Link to={`/requests/${requestData.id}/edit`} className="flex-1">
