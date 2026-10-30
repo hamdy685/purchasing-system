@@ -242,6 +242,9 @@ export const QuickReceiptInspectionModal: React.FC<QuickReceiptInspectionModalPr
 
   const receiptItems = receipt?.items || [];
   const itemsCount = receiptItems.length || item?.items_count || 0;
+  const actualReceiverName = receipt?.actual_receiver_name || receipt?.actual_receiver?.name || receipt?.receiver?.name;
+  // The direct-supply note is written by the system, not the warehouse keeper; the header already says "توريد مباشر".
+  const isSystemBypassNote = Boolean(receipt?.warehouse_notes?.includes('(Auto-Bypassed)'));
 
   return (
     <>
@@ -251,7 +254,6 @@ export const QuickReceiptInspectionModal: React.FC<QuickReceiptInspectionModalPr
           if (!isSubmitting) onClose();
         }}
         title={`فحص واعتماد إذن الاستلام: ${displayCode}`}
-        subtitle="المعاينة والمطابقة الفنية لكميات المواد الموردة بالموقع وتأكيد الاستلام"
         size="xl"
       >
         <div className="space-y-4 text-right" dir="rtl">
@@ -259,24 +261,21 @@ export const QuickReceiptInspectionModal: React.FC<QuickReceiptInspectionModalPr
           <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-slate-900 via-emerald-950/20 to-slate-900 p-4 shadow-lg space-y-3">
             <div className="flex items-center justify-between gap-3 flex-wrap border-b border-emerald-900/40 pb-2.5">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-mono text-xs font-black text-emerald-300 bg-emerald-950/90 border border-emerald-700/60 px-2.5 py-1 rounded-xl shadow-xs">
-                  {displayCode}
-                </span>
                 {poNumber && (
                   <span className="text-xs font-bold text-slate-200 bg-slate-800/80 border border-slate-700 px-2.5 py-1 rounded-xl">
                     📑 أمر الشراء: <strong className="text-cyan-300 font-mono">{poNumber}</strong>
                   </span>
                 )}
-                <span
-                  className={`text-xs font-black px-2.5 py-1 rounded-xl flex items-center gap-1 ${
-                    receipt?.receipt_type === 'REQUESTER_OFFICE'
-                      ? 'bg-indigo-950 text-indigo-300 border border-indigo-800/60'
-                      : 'bg-emerald-950 text-emerald-300 border border-emerald-800/60'
-                  }`}
-                >
-                  <span>{receipt?.receipt_type === 'REQUESTER_OFFICE' ? '🏢' : '📦'}</span>{' '}
-                  {receipt?.receipt_type === 'REQUESTER_OFFICE' ? 'استلام مستلزمات مكتبية' : 'إذن استلام مواد'}
-                </span>
+                {receipt?.receipt_type === 'REQUESTER_OFFICE' && (
+                  <span className="text-xs font-black px-2.5 py-1 rounded-xl bg-indigo-950 text-indigo-300 border border-indigo-800/60">
+                    🏢 مستلزمات مكتبية
+                  </span>
+                )}
+                {!warehouseKeeperName && (
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-amber-950/60 text-amber-300 border border-amber-700/50">
+                    توريد مباشر للموقع
+                  </span>
+                )}
               </div>
 
               {dateFormatted && (
@@ -290,57 +289,39 @@ export const QuickReceiptInspectionModal: React.FC<QuickReceiptInspectionModalPr
             {/* Quick Metadata Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
               <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-2.5 space-y-0.5">
-                <span className="text-[10px] text-slate-400 block font-bold">🏗️ قطعة الأرض:</span>
+                <span className="text-[10px] text-slate-400 block font-bold">قطعة الأرض</span>
                 <span className="font-mono font-black text-cyan-300 truncate block">{parcelRef}</span>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-2.5 space-y-0.5">
-                <span className="text-[10px] text-slate-400 block font-bold">📍 المنطقة / المشروع:</span>
+                <span className="text-[10px] text-slate-400 block font-bold">المنطقة</span>
                 <span className="font-bold text-amber-300 truncate block">{regionName}</span>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-2.5 space-y-0.5">
-                <span className="text-[10px] text-slate-400 block font-bold">🏢 القسم الطالب:</span>
+                <span className="text-[10px] text-slate-400 block font-bold">القسم</span>
                 <span className="font-bold text-slate-200 truncate block">{departmentName}</span>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-2.5 space-y-0.5">
-                <span className="text-[10px] text-slate-400 block font-bold">🤝 المورد:</span>
+                <span className="text-[10px] text-slate-400 block font-bold">المورد</span>
                 <span className="font-bold text-emerald-300 truncate block">{supplierName}</span>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-slate-400">
-              {warehouseKeeperName ? (
-                <div className="flex items-center gap-1">
-                  <span>🏬 أمين المخزن:</span>
-                  <strong className="text-slate-200 font-bold">{warehouseKeeperName}</strong>
-                  <span className="text-emerald-400 font-bold text-[10px]">(مر على إذن الاستلام)</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1">
-                  <span>🏬 أمين المخزن:</span>
-                  <span className="text-amber-400 font-bold text-[10px]">(لم يمر على إذن الاستلام — توريد مباشر)</span>
-                </div>
-              )}
-              {receipt?.actual_receiver_name || receipt?.actual_receiver?.name || receipt?.receiver?.name ? (
-                <div className="flex items-center gap-1">
-                  <span>👤 المستلم الفعلي:</span>
-                  <strong className="text-cyan-300 font-bold">
-                    {receipt?.actual_receiver_name || receipt?.actual_receiver?.name || receipt?.receiver?.name}
-                  </strong>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1">
-                  <span>👤 المستلم الفعلي:</span>
-                  <span className="text-slate-400 font-normal">غير مسجل</span>
-                </div>
-              )}
-            </div>
+            {(warehouseKeeperName || actualReceiverName) && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-400">
+                {warehouseKeeperName && (
+                  <span>أمين المخزن: <strong className="text-slate-200 font-bold">{warehouseKeeperName}</strong></span>
+                )}
+                {actualReceiverName && (
+                  <span>المستلم الفعلي: <strong className="text-cyan-300 font-bold">{actualReceiverName}</strong></span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Warehouse Notes Banner */}
-          {receipt?.warehouse_notes && (
-            <div className="rounded-xl border border-amber-500/40 bg-amber-950/30 p-3 text-xs text-amber-200 flex items-start gap-2.5 shadow-sm">
-              <span className="text-base shrink-0 mt-0.5">🏬</span>
-              <div className="space-y-0.5 flex-1">
+          {receipt?.warehouse_notes && !isSystemBypassNote && (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-950/30 p-3 text-xs text-amber-200 shadow-sm">
+              <div className="space-y-0.5">
                 <strong className="text-amber-400 block font-bold">ملاحظات أمين المخزن:</strong>
                 <p className="leading-relaxed">{receipt.warehouse_notes}</p>
               </div>
@@ -352,7 +333,7 @@ export const QuickReceiptInspectionModal: React.FC<QuickReceiptInspectionModalPr
             <div className="rounded-xl border border-cyan-500/40 bg-cyan-950/20 p-3 space-y-2.5 shadow-sm">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-xs font-bold text-cyan-200 flex items-center gap-1.5">
-                  <span>📷</span> صورة فحص واستلام المخزن (بون الميزان / أختام التوريد المرفقة):
+                  <span>📷</span> صورة الاستلام
                 </span>
                 <button
                   type="button"
@@ -362,7 +343,7 @@ export const QuickReceiptInspectionModal: React.FC<QuickReceiptInspectionModalPr
                   <span>🔍</span> عرض بالحجم الكامل
                 </button>
               </div>
-              <div className="flex items-center gap-3 bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
+              <div>
                 <div
                   onClick={() => setPreviewPhotoUrl(photoUrl)}
                   className="relative h-16 w-16 sm:h-20 sm:w-20 rounded-lg overflow-hidden border border-cyan-400/80 cursor-pointer shrink-0 shadow-md group"
@@ -376,14 +357,6 @@ export const QuickReceiptInspectionModal: React.FC<QuickReceiptInspectionModalPr
                   <div className="absolute inset-0 bg-slate-950/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <span className="text-[10px] font-bold text-white bg-slate-900/90 px-1.5 py-0.5 rounded">🔍</span>
                   </div>
-                </div>
-                <div className="text-xs space-y-1 flex-1">
-                  <p className="font-bold text-slate-100">
-                    صورة موثقة بواسطة أمين المخزن أثناء استلام وفحص الشحنة
-                  </p>
-                  <p className="text-[11px] text-slate-400">
-                    يمكنك مطابقة بون الميزان أو أختام التوريد وتأكيد صحتها قبل الاعتماد.
-                  </p>
                 </div>
               </div>
             </div>
@@ -422,12 +395,12 @@ export const QuickReceiptInspectionModal: React.FC<QuickReceiptInspectionModalPr
             <div className="flex items-center gap-2">
               <span className="text-base">📋</span>
               <h3 className="text-sm font-black text-slate-100">
-                بنود الاستلام المطلوب معاينتها وتأكيد كمياتها
-                <span className="mr-1.5 text-xs text-cyan-400 font-mono">({itemsCount} أصناف)</span>
+                البنود
+                <span className="mr-1.5 text-xs text-cyan-400 font-mono">({itemsCount})</span>
               </h3>
             </div>
 
-            {receiptItems.length > 0 && (
+            {receiptItems.length > 1 && (
               <button
                 type="button"
                 onClick={handleSetAllToWarehouseQty}
@@ -476,7 +449,7 @@ export const QuickReceiptInspectionModal: React.FC<QuickReceiptInspectionModalPr
                           <h4 className="text-xs sm:text-sm font-black text-slate-100 leading-tight">
                             {itemName}
                           </h4>
-                          {(poItem?.item_reference || poItem?.region) && (
+                          {((poItem?.item_reference && poItem.item_reference !== parcelRef) || (poItem?.region && poItem.region !== regionName)) && (
                             <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400">
                               {poItem.item_reference && (
                                 <span className="font-mono text-cyan-300">قطعة: {poItem.item_reference}</span>
@@ -513,11 +486,13 @@ export const QuickReceiptInspectionModal: React.FC<QuickReceiptInspectionModalPr
                       <div className="rounded-xl border border-slate-800/80 bg-slate-900/80 p-2.5 flex items-center justify-between gap-2">
                         <div>
                           <span className="text-[10px] text-slate-400 block font-bold">
-                            الكمية الواردة من المخزن:
+                            {warehouseKeeperName ? 'كمية المخزن' : 'الكمية الموردة'}
                           </span>
-                          <span className="text-[10px] text-slate-500 font-mono">
-                            (المطلوبة بأمر الشراء: {formatCleanQty(orderedQty)})
-                          </span>
+                          {orderedQty !== warehouseQty && (
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              أمر الشراء: {formatCleanQty(orderedQty)}
+                            </span>
+                          )}
                         </div>
                         <div className="font-mono font-black text-sm text-cyan-300 flex items-baseline gap-1">
                           <span>{formatCleanQty(warehouseQty)}</span>
@@ -532,7 +507,7 @@ export const QuickReceiptInspectionModal: React.FC<QuickReceiptInspectionModalPr
                             htmlFor={`qty-input-${it.id}`}
                             className="font-black text-emerald-300 flex items-center gap-1"
                           >
-                            <span>👷</span> الكمية الفعلية المعتمدة:
+                            الكمية المعتمدة
                           </label>
                           <span className="text-[10px] font-bold text-slate-400 font-mono">
                             {unitLabel}
@@ -605,7 +580,7 @@ export const QuickReceiptInspectionModal: React.FC<QuickReceiptInspectionModalPr
           {/* General Inspection Report / Notes */}
           <div className="space-y-1.5 pt-1">
             <label className="block text-xs font-bold text-slate-300">
-              تقرير الفحص والمطابقة الفنية / ملاحظاتك العامة (اختياري):
+              ملاحظات الفحص (اختياري)
             </label>
             <textarea
               rows={2}
