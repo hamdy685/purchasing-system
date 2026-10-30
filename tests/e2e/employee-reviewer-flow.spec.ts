@@ -305,7 +305,7 @@ test.describe('E2E User Journey: Employee Creation & Reviewer Approval Flow', ()
     // 2. Navigate to Create Purchase Request
     // -------------------------------------------------------------
     await page.goto('/requests/create', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('نوع الطلب والغرض:')).toBeVisible();
+    await expect(page.getByRole('group', { name: 'نوع الطلب' })).toBeVisible();
 
     // -------------------------------------------------------------
     // 3. Conditional Fields Verification (Office Supplies vs Projects)

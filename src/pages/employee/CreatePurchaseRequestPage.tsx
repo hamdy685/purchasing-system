@@ -617,15 +617,6 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
                   {requestHasErrors ? 'استكمال الحقول' : 'جاهز للإرسال'}
                 </span>
               </div>
-              <div className="flex items-center gap-2 text-[10px] sm:text-[11px] text-slate-400 mt-0.5">
-                <span>📦 البنود: <strong className="text-cyan-300">{data.items.length} صنف</strong></span>
-                <span className="text-slate-600">•</span>
-                <span>
-                  النوع: <strong className={data.request_type === 'COMPLEMENTARY' ? 'text-amber-400' : isOffice ? 'text-indigo-300' : 'text-amber-300'}>
-                    {data.request_type === 'COMPLEMENTARY' ? '⚡ كمالة (مسار سريع)' : isOffice ? '🏢 مكتبي' : '🏗️ مشروع/موقع'}
-                  </strong>
-                </span>
-              </div>
             </div>
           </div>
 
@@ -681,16 +672,11 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
         </div>
       )}
 
-      {/* Request Type Segmented Bar (Ultra-Compact & Mobile-Optimized) */}
+      {/* Request Type Segmented Bar — the highlighted tab is the only place the type is shown */}
       <div className="rounded-xl sm:rounded-2xl border border-slate-800 bg-slate-900/95 p-2 sm:p-3 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-2.5">
-        <div className="flex items-center justify-between sm:justify-start gap-2">
-          <span className="text-xs font-bold text-slate-300">نوع الطلب والغرض:</span>
-          <span className="text-[10px] text-slate-400 sm:text-slate-500">
-            {data.request_type === 'COMPLEMENTARY' ? '⚡ كمالة مستقل (مسار سريع)' : isOffice ? '🏢 مشتريات إدارية' : '🏗️ مشروعات'}
-          </span>
-        </div>
+        <span className="hidden sm:inline text-xs font-bold text-slate-300">نوع الطلب:</span>
 
-        <div className="grid grid-cols-3 gap-1 sm:flex sm:items-center sm:gap-2 bg-slate-950/80 p-1 rounded-xl border border-slate-800/80">
+        <div role="group" aria-label="نوع الطلب" className="grid grid-cols-3 gap-1 sm:flex sm:items-center sm:gap-2 bg-slate-950/80 p-1 rounded-xl border border-slate-800/80">
           <button
             type="button"
             onClick={() => setData({ ...data, request_type: 'PROJECT' })}
@@ -749,55 +735,6 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
           </div>
         </div>
       )}
-
-      {/* ── 3-Step Wizard Visual Progress Bar (Compact on Mobile) ── */}
-      <div className="rounded-xl sm:rounded-2xl border border-slate-800/80 bg-slate-900/80 p-2 sm:p-4 shadow-lg">
-        {/* Mobile Compact Step Indicator */}
-        <div className="flex sm:hidden items-center justify-between text-[11px] font-bold">
-          <div className="flex items-center gap-1 text-cyan-300">
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cyan-500/20 border border-cyan-400 text-[10px] font-mono">1</span>
-            <span>البيانات</span>
-          </div>
-          <span className="text-slate-600">←</span>
-          <div className="flex items-center gap-1 text-indigo-300">
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500/20 border border-indigo-400 text-[10px] font-mono">2</span>
-            <span>الأصناف ({data.items.length})</span>
-          </div>
-          <span className="text-slate-600">←</span>
-          <div className="flex items-center gap-1 text-emerald-300">
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 border border-emerald-400 text-[10px] font-mono">3</span>
-            <span>المراجعة</span>
-          </div>
-        </div>
-
-        {/* Desktop Full Step Bar */}
-        <div className="hidden sm:flex items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-2 font-black text-cyan-300">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-500/20 border border-cyan-400 text-cyan-300 text-xs font-mono">
-              1
-            </span>
-            <span>الخطوة 1: البيانات والموقع</span>
-          </div>
-
-          <div className="h-[2px] flex-1 bg-gradient-to-r from-cyan-500/40 via-indigo-500/40 to-emerald-500/40 mx-2 sm:mx-4" />
-
-          <div className="flex items-center gap-2 font-black text-indigo-300">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 border border-indigo-400 text-indigo-300 text-xs font-mono">
-              2
-            </span>
-            <span>الخطوة 2: الأصناف والمواصفات ({data.items.length})</span>
-          </div>
-
-          <div className="h-[2px] flex-1 bg-gradient-to-r from-indigo-500/40 via-emerald-500/40 to-emerald-400 mx-2 sm:mx-4" />
-
-          <div className="flex items-center gap-2 font-black text-emerald-300">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 border border-emerald-400 text-emerald-300 text-xs font-mono">
-              3
-            </span>
-            <span>الخطوة 3: المراجعة والإرسال</span>
-          </div>
-        </div>
-      </div>
 
       {/* Card 1: Basic Request Info */}
       <Card className="space-y-3.5 border-slate-800 bg-slate-900/90 p-3.5 sm:p-4 shadow-xl">
@@ -875,16 +812,16 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
         {/* Site Engineer Selector for General Manager Direct Path */}
         {isGeneralManager && !isOffice && (
           <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/30 p-3.5 space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
               <span className="text-emerald-400 font-black flex items-center gap-1.5 text-xs">
-                <span>👷</span> تحديد مهندس الموقع / مسؤول الاستلام (اختيار المدير التنفيذي) <span className="text-rose-400">*</span>
+                <span>👷</span> مهندس الموقع / مسؤول الاستلام <span className="text-rose-400">*</span>
               </span>
               <span className="text-[10px] text-emerald-300 font-bold bg-emerald-950/90 px-2 py-0.5 rounded border border-emerald-600/50">
-                بديل خطوة المراجع — إرسال مباشر للمشتريات
+                بديل خطوة المراجع
               </span>
             </div>
             <p className="text-[11px] text-slate-300 leading-relaxed">
-              طالما أن طلب الشراء صادر من المدير التنفيذي فلن يمر على مراجع قسم، لذلك يتعين عليك تحديد مهندس الموقع أو مسؤول الاستلام الذي سيتولى فحص واستلام المواد قبل إرسال الطلب للمشتريات:
+              الطلب ده مش هيعدّي على مراجع قسم، فاختار مين هيفحص ويستلم المواد قبل الإرسال للمشتريات.
             </p>
             {isLoadingReceivers ? (
               <div className="text-xs text-slate-400 py-1 font-bold">جاري تحميل قائمة المهندسين والمستلمين...</div>
@@ -1386,12 +1323,6 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
             + إضافة سطر صنف آخر (Add Row)
           </Button>
 
-          <div className="text-[11px] text-slate-400 font-mono">
-            إجمالي الأصناف: <strong className="text-cyan-300 font-bold">{data.items.length}</strong> | إجمالي الكميات:{' '}
-            <strong className="text-amber-300 font-bold">
-              {data.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0)}
-            </strong>
-          </div>
         </div>
       </Card>
 
@@ -1401,8 +1332,6 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
         <div className="flex sm:hidden items-center justify-between text-[11px] px-1 text-slate-400 font-semibold">
           <div className="flex items-center gap-2">
             <span>📦 الأصناف: <strong className="text-cyan-300 font-mono">{data.items.length}</strong></span>
-            <span className="text-slate-600">•</span>
-            <span>الكميات: <strong className="text-amber-300 font-mono">{data.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0)}</strong></span>
           </div>
           {draftMessage ? (
             <span className="text-emerald-400 font-bold text-[10px]">✓ {draftMessage}</span>
@@ -1422,11 +1351,6 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
           <div className="flex items-center gap-3 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl">
             <span className="text-slate-400 font-bold">إجمالي الأصناف:</span>
             <span className="font-mono font-black text-cyan-300 text-sm">{data.items.length}</span>
-            <span className="text-slate-600">|</span>
-            <span className="text-slate-400 font-bold">إجمالي الكميات:</span>
-            <span className="font-mono font-black text-amber-300 text-sm">
-              {data.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0)}
-            </span>
           </div>
 
           {draftMessage && (

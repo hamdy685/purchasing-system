@@ -92,11 +92,10 @@ describe('Scenario 2: اختبار تدفق الموظف ونموذج الإنش
       </MemoryRouter>
     );
 
-    // Assert visual progress bar steps are rendered
+    // Assert the numbered form sections are rendered
     await waitFor(() => {
-      expect(screen.getByText(/الخطوة 1: البيانات والموقع/i)).toBeInTheDocument();
-      expect(screen.getByText(/الخطوة 2: الأصناف والمواصفات/i)).toBeInTheDocument();
-      expect(screen.getByText(/الخطوة 3: المراجعة والإرسال/i)).toBeInTheDocument();
+      expect(screen.getByText(/1\. بيانات الطلب والجهة المعالجة/i)).toBeInTheDocument();
+      expect(screen.getByText(/2\. بنود ومواد الطلب/i)).toBeInTheDocument();
     });
   });
 
@@ -146,7 +145,7 @@ describe('Scenario 2: اختبار تدفق الموظف ونموذج الإنش
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/الخطوة 1/i)).toBeInTheDocument();
+      expect(screen.getByText(/1\. بيانات الطلب والجهة المعالجة/i)).toBeInTheDocument();
     });
 
     // Pricing is exclusively reserved for procurement department
