@@ -103,6 +103,9 @@ export const PurchasesReportView: React.FC = () => {
   const [colFilters, setColFilters] = useState<Record<string, string>>(initialFilters);
   const debouncedColFilters = useDebounce<Record<string, string>>(colFilters, 400);
   const [showColumnFilters, setShowColumnFilters] = useState<boolean>(true);
+  // Phones: line cards by default (the 14-column sheet is ~1750px wide); filters folded into one line.
+  const [mobileView, setMobileView] = useState<'cards' | 'sheet'>('cards');
+  const [showMobileFilters, setShowMobileFilters] = useState<boolean>(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -726,6 +729,124 @@ export const PurchasesReportView: React.FC = () => {
     setTimeout(() => setCopySuccess(false), 3000);
   };
 
+  // الإذن • الفاتورة • التسجيل — shared by the sheet's M column and the mobile line cards.
+  const renderDocumentActions = (row: PurchasesReportRow, layout: string) => {
+    const isUnpriced = Number(row.total_price || 0) <= 0;
+
+    return (
+      <div className={`flex items-center gap-1.5 ${layout}`}>
+        {/* زر رؤية الإذن */}
+        {row.has_receipt_attachment ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenReceiptModal(row);
+            }}
+            className="inline-flex items-center gap-1 rounded-md bg-blue-600 hover:bg-blue-700 active:scale-95 text-white py-1 px-2.5 text-xs font-bold shadow-2xs transition-all border border-blue-700 hover:shadow-xs cursor-pointer select-none shrink-0"
+            title="استعراض صورة إذن الاستلام ومستند التوريد / Google Drive"
+          >
+            <span>📄</span>
+            <span>رؤية الإذن</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled
+            className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-400 border border-slate-200 py-1 px-2 text-xs font-medium cursor-not-allowed select-none shadow-2xs shrink-0"
+            title="لا توجد صورة أو وزنة مرفقة لهذا الإذن"
+          >
+            <span className="opacity-50">📄</span>
+            <span className="text-slate-400">رؤية الإذن</span>
+          </button>
+        )}
+
+        {/* زر الفاتورة: أصفر إذا توفرت ورمادي إذا لم تتوفر */}
+        {row.has_invoice_attachment && row.invoice_url ? (
+          <a
+            href={row.invoice_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 rounded-md bg-amber-500 hover:bg-amber-400 active:scale-95 text-amber-950 py-1 px-2.5 text-xs font-black shadow-2xs transition-all border border-amber-400 hover:shadow-xs cursor-pointer select-none shrink-0"
+            title="استعراض فاتورة المورد المرفوعة على Google Drive بمجلد «فواتير»"
+          >
+            <span>🧾</span>
+            <span>الفاتورة</span>
+          </a>
+        ) : (
+          <button
+            type="button"
+            disabled
+            className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-400 border border-slate-200 py-1 px-2 text-xs font-medium cursor-not-allowed select-none shadow-2xs shrink-0"
+            title="لا توجد فاتورة مرفقة لهذا الطلب"
+          >
+            <span className="opacity-40">🧾</span>
+            <span className="text-slate-400">الفاتورة</span>
+          </button>
+        )}
+
+        {/* زر أو بطاقة الحالة المحاسبية */}
+        {row.accounting_status === 'VERIFIED' || row.invoice_number ? (
+          <div className="flex flex-col items-center justify-center gap-0.5 shrink-0">
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 text-xs font-bold text-emerald-800 shadow-2xs">
+              <span className="text-emerald-600 font-bold">✓</span>
+              <span>تم التسجيل</span>
+            </span>
+            {row.invoice_number && (
+              <span
+                className="text-[10px] font-mono font-bold text-slate-700 bg-white/90 border border-slate-200 px-1.5 py-0.5 rounded mt-0.5 shadow-2xs"
+                title={`رقم فاتورة المورد: ${row.invoice_number}`}
+              >
+                فاتورة #{row.invoice_number}
+              </span>
+            )}
+          </div>
+        ) : canRegisterInvoice && isRowActionAllowed(row) ? (
+          isUnpriced ? (
+            <button
+              type="button"
+              disabled
+              className="inline-flex items-center justify-center gap-1 rounded-md bg-gray-200 text-gray-400 border border-gray-300 py-1 px-2 text-xs font-medium cursor-not-allowed select-none shadow-2xs shrink-0"
+              title="لا يمكن تسجيل فاتورة لبند غير مسعر (القيمة 0 ج.م)"
+            >
+              <span>🧾</span>
+              <span>تسجيل الفاتورة</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenInvoiceModal(row);
+              }}
+              className="inline-flex items-center justify-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white py-1 px-2.5 text-xs font-bold shadow-2xs transition-all border border-emerald-700 hover:shadow-xs cursor-pointer select-none shrink-0"
+              title="تسجيل فاتورة المورد واعتمادها بالحسابات"
+            >
+              <span>🧾</span>
+              <span>تسجيل الفاتورة</span>
+            </button>
+          )
+        ) : (
+          <span
+            className="inline-flex items-center justify-center gap-1 rounded-md bg-slate-100 border border-slate-200 py-1 px-2 text-[11px] font-medium text-slate-500 shadow-2xs shrink-0"
+            title={canRegisterInvoice ? "المستند خارج نطاق اختصاصك - متاح للاطلاع والتحليلات فقط" : "تسجيل الفواتير المالية مسند لمحاسب القسم المختص وفقاً لقاعدة فصل المهام"}
+          >
+            <span className="text-slate-400">{canRegisterInvoice ? "🔒" : "⏳"}</span>
+            <span>{canRegisterInvoice ? "(للاطلاع فقط)" : "(مسند للحسابات)"}</span>
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  const mobilePeriodLabel = filterType === 'monthly'
+    ? selectedMonth
+    : (filterType === 'daily' ? selectedDate : `${fromDate} ← ${toDate}`);
+  const mobileDepartmentLabel = selectedDepartment === 'ALL'
+    ? 'جميع الأقسام'
+    : (data?.departments?.find((dept) => String(dept.id) === String(selectedDepartment))?.name || 'قسم محدد');
+
   return (
     <div className="space-y-4" dir="rtl">
       {/* ========================================================================= */}
@@ -901,7 +1022,7 @@ export const PurchasesReportView: React.FC = () => {
                 <h1 className="text-sm sm:text-base font-black tracking-wide flex items-center gap-2">
                   <span>ورقة إكسيل: {dynamicReportTitle}.xlsx</span>
                 </h1>
-                <span className="text-[10px] text-emerald-100 opacity-90 block">
+                <span className="text-[10px] text-emerald-100 opacity-90 hidden sm:block">
                   تقرير المشتريات المسقطة محاسبياً (بعد تسجيل فاتورة المورد في المرحلة النهائية) • 12 عموداً • إمكانية التصفية والفرز والتصدير
                 </span>
               </div>
@@ -916,7 +1037,7 @@ export const PurchasesReportView: React.FC = () => {
                 title="تنزيل كملف Excel CSV"
               >
                 <span>📥</span>
-                <span>حفظ Excel</span>
+                <span className="hidden sm:inline">حفظ Excel</span>
               </button>
 
               <button
@@ -926,7 +1047,7 @@ export const PurchasesReportView: React.FC = () => {
                 title="نسخ الجدول لبرنامج إكسل"
               >
                 <span>📋</span>
-                <span>{copySuccess ? 'تم النسخ!' : 'نسخ الورقة'}</span>
+                <span className="hidden sm:inline">{copySuccess ? 'تم النسخ!' : 'نسخ الورقة'}</span>
               </button>
 
               <button
@@ -936,7 +1057,7 @@ export const PurchasesReportView: React.FC = () => {
                 title="طباعة تقرير إكسل مسطر"
               >
                 <span>🖨️</span>
-                <span>طباعة الورقة</span>
+                <span className="hidden sm:inline">طباعة الورقة</span>
               </button>
 
 
@@ -954,7 +1075,7 @@ export const PurchasesReportView: React.FC = () => {
 
           {/* Formula & Status Bar (fx) */}
           <div className="bg-slate-800/90 px-4 py-2 border-b border-slate-700 flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-3 flex-1 min-w-[280px]">
+            <div className="hidden md:flex items-center gap-3 flex-1 min-w-[280px]">
               <div className="font-mono font-black text-amber-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-700 text-[11px]">
                 fx
               </div>
@@ -980,7 +1101,7 @@ export const PurchasesReportView: React.FC = () => {
             </div>
 
             {/* Actual Orders Toggle (Default: True) */}
-            <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800">
+            <div className="hidden md:flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800">
               <button
                 type="button"
                 onClick={() => setActualOnly((prev) => !prev)}
@@ -998,8 +1119,8 @@ export const PurchasesReportView: React.FC = () => {
             </div>
 
             {/* Accounting Mode Toggle (All Orders vs Pending Invoices vs Verified) */}
-            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
-              <span className="text-[10px] font-bold text-slate-400 px-2">عرض:</span>
+            <div className="grid grid-cols-3 w-full md:w-auto md:flex md:items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+              <span className="hidden md:inline text-[10px] font-bold text-slate-400 px-2">عرض:</span>
               <button
                 type="button"
                 onClick={() => setAccountingFilter('ALL')}
@@ -1036,8 +1157,58 @@ export const PurchasesReportView: React.FC = () => {
             </div>
           </div>
 
+          {/* Phones: totals first, then one line that unfolds the filters, then the cards/sheet switch */}
+          <div className="md:hidden p-3 space-y-2.5 bg-slate-950/70 border-b border-slate-800">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="col-span-2 rounded-xl border border-emerald-700/60 bg-emerald-950/40 px-3 py-2">
+                <span className="block text-[11px] font-bold text-emerald-300/80">إجمالي القيمة</span>
+                <strong className="block text-lg font-black text-emerald-300" dir="ltr">{formatCleanNumber(liveTotals.totalAmount)} ج.م</strong>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
+                <span className="block text-[11px] font-bold text-slate-400">أوامر الشراء</span>
+                <strong className="text-base font-black text-slate-100">{liveTotals.uniqueOrders}</strong>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
+                <span className="block text-[11px] font-bold text-slate-400">الموردين</span>
+                <strong className="text-base font-black text-slate-100">{liveTotals.uniqueSuppliers}</strong>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowMobileFilters((prev) => !prev)}
+              aria-expanded={showMobileFilters}
+              className="w-full flex items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-bold text-slate-200"
+            >
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span>🔍</span>
+                <span className="truncate">
+                  {mobilePeriodLabel} · {mobileDepartmentLabel}{actualOnly ? ' · الفعلية فقط' : ''}
+                </span>
+              </span>
+              <span className="shrink-0 text-emerald-400">{showMobileFilters ? 'إخفاء الفلاتر ▴' : 'الفلاتر ▾'}</span>
+            </button>
+
+            <div className="flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-900 p-1 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setMobileView('cards')}
+                className={`flex-1 rounded-lg py-1.5 transition ${mobileView === 'cards' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400'}`}
+              >
+                📇 بطاقات ({filteredRows.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileView('sheet')}
+                className={`flex-1 rounded-lg py-1.5 transition ${mobileView === 'sheet' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400'}`}
+              >
+                📊 ورقة الإكسيل
+              </button>
+            </div>
+          </div>
+
           {/* Controls Bar: Period Type + Date + Department Dropdown */}
-          <div className="p-3 bg-slate-950/70 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className={`${showMobileFilters ? 'flex' : 'hidden'} md:flex p-3 bg-slate-950/70 border-b border-slate-800 flex-wrap items-center justify-between gap-3 text-xs`}>
             <div className="flex flex-wrap items-center gap-3">
               
               {/* Period Type */}
@@ -1207,8 +1378,133 @@ export const PurchasesReportView: React.FC = () => {
           </div>
         )}
 
+        {/* ── PHONE LINE CARDS: every column of the sheet stacked, so nothing needs sideways scrolling ── */}
+        {mobileView === 'cards' && (
+          <div className="md:hidden space-y-2.5">
+            {loading ? (
+              <div className="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center text-xs font-bold text-slate-400">
+                جاري تحميل بيانات التقرير...
+              </div>
+            ) : filteredRows.length === 0 ? (
+              <div className="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center space-y-2">
+                <p className="text-sm font-black text-slate-200">لا توجد بيانات في الفترة أو الفلاتر المحددة</p>
+                {hasActiveColFilters && (
+                  <button
+                    type="button"
+                    onClick={handleClearColFilters}
+                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-black text-white"
+                  >
+                    ✕ مسح فلاتر الأعمدة
+                  </button>
+                )}
+              </div>
+            ) : (
+              <>
+                {filteredRows.map((row, idx) => {
+                  const poKey = String(row.purchase_order_id || row.po_number || row.id);
+                  const palette = PO_PALETTES[(poGroupingMeta.get(poKey)?.groupIdx ?? idx) % PO_PALETTES.length];
+                  const rawItemName = (row.item_name || '').trim();
+                  const isFictitiousOrEmpty = !rawItemName || ['صنف 00', 'صنف 0', '00', '0'].includes(rawItemName);
+                  const totalPriceNum = Number(row.total_price || 0);
+                  const dateLabel = dateBasis === 'po_date'
+                    ? (row.po_date_formatted || row.po_date || '—')
+                    : (dateBasis === 'pr_date'
+                      ? (row.pr_date_formatted || row.pr_date || '—')
+                      : (row.delivery_date_formatted || row.delivery_date || '—'));
+                  const uomLabel = getUnitLabel(row.uom) || row.uom || '';
+
+                  return (
+                    <article
+                      key={row.id}
+                      className="rounded-xl border border-slate-700 bg-slate-900 p-3 space-y-2.5 text-xs text-slate-300"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-mono text-[11px] text-slate-500">{idx + 1}.</span>
+                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-black font-mono ${palette.poTag}`}>
+                            {row.po_number_short || row.po_number}
+                          </span>
+                        </span>
+                        <span className="font-mono text-[11px] text-slate-400 shrink-0">{dateLabel}</span>
+                      </div>
+
+                      <h3 className="text-sm font-black text-slate-100 leading-snug" style={{ overflowWrap: 'anywhere' }}>
+                        {isFictitiousOrEmpty ? '---' : rawItemName}
+                      </h3>
+
+                      <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-950/70 border border-slate-800 px-2.5 py-2">
+                        <div className="min-w-0">
+                          <span className="block text-[11px] text-slate-400">الكمية</span>
+                          <strong className="text-sm font-black text-slate-100" dir="ltr">{formatCleanQty(row.quantity)}</strong>
+                          <span className="block text-[11px] text-slate-400">{uomLabel}</span>
+                        </div>
+                        <div className="min-w-0 text-center">
+                          <span className="block text-[11px] text-slate-400">سعر الوحدة</span>
+                          <strong className="font-mono text-slate-200" dir="ltr" style={{ overflowWrap: 'anywhere' }}>
+                            {Number(row.unit_price || 0) > 0 ? formatCleanNumber(row.unit_price) : '—'}
+                          </strong>
+                        </div>
+                        <div className="min-w-0 text-left">
+                          <span className="block text-[11px] text-slate-400">الإجمالي</span>
+                          <strong
+                            className={`font-mono text-sm font-black ${totalPriceNum > 0 ? 'text-emerald-300' : 'text-slate-500'}`}
+                            dir="ltr"
+                            style={{ overflowWrap: 'anywhere' }}
+                          >
+                            {totalPriceNum > 0 ? formatCleanNumber(row.total_price) : 'غير مسعر'}
+                          </strong>
+                        </div>
+                      </div>
+
+                      <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
+                        <div className="min-w-0">
+                          <dt className="text-[11px] text-slate-500">الكمية المستلمة</dt>
+                          <dd className="font-bold text-slate-200">
+                            {row.received_quantity !== undefined && row.received_quantity !== null
+                              ? <><span dir="ltr">{formatCleanQty(row.received_quantity)}</span> {uomLabel}</>
+                              : '—'}
+                          </dd>
+                        </div>
+                        <div className="min-w-0">
+                          <dt className="text-[11px] text-slate-500">رقم القطعة</dt>
+                          <dd className="font-mono font-bold text-amber-300" style={{ overflowWrap: 'anywhere' }}>{row.parcel_reference || '—'}</dd>
+                        </div>
+                        <div className="min-w-0">
+                          <dt className="text-[11px] text-slate-500">المنطقة</dt>
+                          <dd className="font-bold text-slate-200" style={{ overflowWrap: 'anywhere' }}>{row.region || '—'}</dd>
+                        </div>
+                        <div className="min-w-0">
+                          <dt className="text-[11px] text-slate-500">القسم</dt>
+                          <dd className="font-bold text-slate-200" style={{ overflowWrap: 'anywhere' }}>{row.department_name || '—'}</dd>
+                        </div>
+                        <div className="col-span-2 min-w-0">
+                          <dt className="text-[11px] text-slate-500">المورد</dt>
+                          <dd className="font-bold text-slate-200" style={{ overflowWrap: 'anywhere' }}>{row.supplier_name || '—'}</dd>
+                        </div>
+                        <div className="col-span-2 min-w-0">
+                          <dt className="text-[11px] text-slate-500">الأعمال</dt>
+                          <dd className="text-slate-200 leading-snug" style={{ overflowWrap: 'anywhere' }}>{row.works || '—'}</dd>
+                        </div>
+                      </dl>
+
+                      <div className="pt-2 border-t border-slate-800">
+                        {renderDocumentActions(row, 'flex-wrap justify-start')}
+                      </div>
+                    </article>
+                  );
+                })}
+
+                <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/40 px-3 py-2.5 flex items-center justify-between gap-2 text-xs font-bold text-emerald-200">
+                  <span>الإجمالي ({filteredRows.length} بند)</span>
+                  <span className="font-mono font-black text-sm text-emerald-300" dir="ltr">{formatCleanNumber(liveTotals.totalAmount)} ج.م</span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* ── REAL EXCEL SPREADSHEET GRID (WHITE PAPER SHEET) ── */}
-        <div className="rounded-2xl border-2 border-slate-300 bg-white text-slate-900 shadow-2xl overflow-hidden print:border-none print:shadow-none print:rounded-none">
+        <div className={`${mobileView === 'cards' ? 'hidden md:block' : ''} rounded-2xl border-2 border-slate-300 bg-white text-slate-900 shadow-2xl overflow-hidden print:border-none print:shadow-none print:rounded-none`}>
           
           {/* Printable Header: Logo Top Right, Title Center, Date Left (Appears in Print) */}
           <div className="hidden print:flex items-start justify-between pb-3 border-b-2 border-black p-4 bg-white text-black">
@@ -1627,109 +1923,7 @@ export const PurchasesReportView: React.FC = () => {
                           onClick={() => setSelectedCell(`M${rowNumber}`)}
                           className="border border-slate-300 px-2 py-1.5 text-center whitespace-nowrap"
                         >
-                          <div className="flex items-center justify-center gap-1.5">
-                            {/* زر رؤية الإذن */}
-                            {row.has_receipt_attachment ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenReceiptModal(row);
-                                }}
-                                className="inline-flex items-center gap-1 rounded-md bg-blue-600 hover:bg-blue-700 active:scale-95 text-white py-1 px-2.5 text-xs font-bold shadow-2xs transition-all border border-blue-700 hover:shadow-xs cursor-pointer select-none shrink-0"
-                                title="استعراض صورة إذن الاستلام ومستند التوريد / Google Drive"
-                              >
-                                <span>📄</span>
-                                <span>رؤية الإذن</span>
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled
-                                className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-400 border border-slate-200 py-1 px-2 text-xs font-medium cursor-not-allowed select-none shadow-2xs shrink-0"
-                                title="لا توجد صورة أو وزنة مرفقة لهذا الإذن"
-                              >
-                                <span className="opacity-50">📄</span>
-                                <span className="text-slate-400">رؤية الإذن</span>
-                              </button>
-                            )}
-
-                            {/* زر الفاتورة: أصفر إذا توفرت ورمادي إذا لم تتوفر */}
-                            {row.has_invoice_attachment && row.invoice_url ? (
-                              <a
-                                href={row.invoice_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center gap-1 rounded-md bg-amber-500 hover:bg-amber-400 active:scale-95 text-amber-950 py-1 px-2.5 text-xs font-black shadow-2xs transition-all border border-amber-400 hover:shadow-xs cursor-pointer select-none shrink-0"
-                                title="استعراض فاتورة المورد المرفوعة على Google Drive بمجلد «فواتير»"
-                              >
-                                <span>🧾</span>
-                                <span>الفاتورة</span>
-                              </a>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled
-                                className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-400 border border-slate-200 py-1 px-2 text-xs font-medium cursor-not-allowed select-none shadow-2xs shrink-0"
-                                title="لا توجد فاتورة مرفقة لهذا الطلب"
-                              >
-                                <span className="opacity-40">🧾</span>
-                                <span className="text-slate-400">الفاتورة</span>
-                              </button>
-                            )}
-
-                            {/* زر أو بطاقة الحالة المحاسبية */}
-                            {row.accounting_status === 'VERIFIED' || row.invoice_number ? (
-                              <div className="flex flex-col items-center justify-center gap-0.5 shrink-0">
-                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 text-xs font-bold text-emerald-800 shadow-2xs">
-                                  <span className="text-emerald-600 font-bold">✓</span>
-                                  <span>تم التسجيل</span>
-                                </span>
-                                {row.invoice_number && (
-                                  <span
-                                    className="text-[10px] font-mono font-bold text-slate-700 bg-white/90 border border-slate-200 px-1.5 py-0.5 rounded mt-0.5 shadow-2xs"
-                                    title={`رقم فاتورة المورد: ${row.invoice_number}`}
-                                  >
-                                    فاتورة #{row.invoice_number}
-                                  </span>
-                                )}
-                              </div>
-                            ) : canRegisterInvoice && isRowActionAllowed(row) ? (
-                              isUnpriced ? (
-                                <button
-                                  type="button"
-                                  disabled
-                                  className="inline-flex items-center justify-center gap-1 rounded-md bg-gray-200 text-gray-400 border border-gray-300 py-1 px-2 text-xs font-medium cursor-not-allowed select-none shadow-2xs shrink-0"
-                                  title="لا يمكن تسجيل فاتورة لبند غير مسعر (القيمة 0 ج.م)"
-                                >
-                                  <span>🧾</span>
-                                  <span>تسجيل الفاتورة</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleOpenInvoiceModal(row);
-                                  }}
-                                  className="inline-flex items-center justify-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white py-1 px-2.5 text-xs font-bold shadow-2xs transition-all border border-emerald-700 hover:shadow-xs cursor-pointer select-none shrink-0"
-                                  title="تسجيل فاتورة المورد واعتمادها بالحسابات"
-                                >
-                                  <span>🧾</span>
-                                  <span>تسجيل الفاتورة</span>
-                                </button>
-                              )
-                            ) : (
-                              <span
-                                className="inline-flex items-center justify-center gap-1 rounded-md bg-slate-100 border border-slate-200 py-1 px-2 text-[11px] font-medium text-slate-500 shadow-2xs shrink-0"
-                                title={canRegisterInvoice ? "المستند خارج نطاق اختصاصك - متاح للاطلاع والتحليلات فقط" : "تسجيل الفواتير المالية مسند لمحاسب القسم المختص وفقاً لقاعدة فصل المهام"}
-                              >
-                                <span className="text-slate-400">{canRegisterInvoice ? "🔒" : "⏳"}</span>
-                                <span>{canRegisterInvoice ? "(للاطلاع فقط)" : "(مسند للحسابات)"}</span>
-                              </span>
-                            )}
-                          </div>
+                          {renderDocumentActions(row, 'justify-center')}
                         </td>
                       </tr>
                     );
