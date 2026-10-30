@@ -19,6 +19,7 @@ const PAGE_TITLES: Array<{ prefix: string; title: string }> = [
   { prefix: '/reviewer/purchase-quotes', title: 'ترشيح عروض الأسعار' },
   { prefix: '/reviewer/requests', title: 'طلبات المراجعة' },
   { prefix: '/reviewer', title: 'لوحة المراجعة' },
+  { prefix: '/procurement/purchase-orders/create', title: 'إصدار أمر شراء' },
   { prefix: '/procurement/purchase-orders', title: 'أوامر الشراء' },
   { prefix: '/procurement/approved-requests', title: 'الطلبات المعتمدة للمشتريات' },
   { prefix: '/procurement/suppliers', title: 'إدارة موردي المشتريات' },

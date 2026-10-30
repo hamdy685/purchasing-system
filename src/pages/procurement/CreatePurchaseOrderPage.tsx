@@ -915,37 +915,15 @@ export const CreatePurchaseOrderPage: React.FC = () => {
 
   return (
     <div className="procurement-reference-page space-y-6 animate-fade-in" dir="rtl">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-        <div>
-          <div className="flex items-center space-x-2 space-x-reverse">
-            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
-            <h1 className="text-xl font-bold text-slate-100">إصدار أمر شراء رسمي</h1>
-          </div>
-          <p className="text-xs text-slate-400 mt-1">
-            تحويل طلب الشراء المعتمد إلى أمر شراء مالي ملزم للمورد وتحديد الشروط التجارية
-          </p>
-        </div>
-
-        <div className="flex items-center space-x-2 space-x-reverse">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              const returnUrl = searchParams.get('returnUrl') || (location.state as { returnTo?: string })?.returnTo || '/procurement';
-              navigate(returnUrl);
-            }}
-          >
-            &rarr; رجوع
-          </Button>
-          <button
-            type="button"
-            onClick={() => setIsDirectPoModalOpen(true)}
-            className="bg-slate-800 hover:bg-slate-700 text-cyan-400 font-bold text-xs px-4 py-2.5 rounded-lg border border-slate-700 transition-colors"
-          >
-            + إصدار أمر شراء مباشر
-          </button>
-        </div>
+      {/* العنوان والرجوع في هيدر التخطيط؛ هنا بس اختصار أمر الشراء المباشر */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setIsDirectPoModalOpen(true)}
+          className="text-xs font-bold text-cyan-400 hover:text-cyan-300 underline-offset-4 hover:underline transition-colors cursor-pointer"
+        >
+          + أمر شراء مباشر
+        </button>
       </div>
 
       {successMessage && (
@@ -1011,37 +989,39 @@ export const CreatePurchaseOrderPage: React.FC = () => {
 
         {/* SECTION 1: REFERENCE PURCHASE REQUEST (READ ONLY) */}
         {pr && (
-          <Card className="space-y-4 border-cyan-500/30 bg-slate-900/90">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h2 className="text-sm font-bold text-cyan-400 flex items-center gap-2">
-                <span>📋</span> القسم الأول: بيانات طلب الشراء المصدر (للاطلاع فقط)
-              </h2>
-              <span className="text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800/60 px-2 py-0.5 rounded font-bold">
-                #{pr.request_number}
+          <Card className="space-y-3 border-slate-800 bg-slate-900/90">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-xs font-bold text-slate-400">الطلب الأصلي</h2>
+              <span dir="ltr" className="font-mono text-sm font-black text-cyan-300 break-all">
+                {pr.request_number}
               </span>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 text-xs">
-              <div>
-                <span className="text-slate-400 block text-[10px]">القسم:</span>
-                <span className="font-bold text-slate-200">{pr.department?.name || '-'}</span>
+            <dl className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2.5 text-xs">
+              <div className="min-w-0">
+                <dt className="text-[10px] text-slate-500">القسم</dt>
+                <dd className="font-bold text-slate-200 break-words">{pr.department?.name || '-'}</dd>
               </div>
-              <div>
-                <span className="text-slate-400 block text-[10px]">صاحب الطلب:</span>
-                <span className="font-bold text-slate-200">{pr.requester?.name || '-'}</span>
+              <div className="min-w-0">
+                <dt className="text-[10px] text-slate-500">صاحب الطلب</dt>
+                <dd className="font-bold text-slate-200 break-words">{pr.requester?.name || '-'}</dd>
               </div>
-              <div>
-                <span className="text-slate-400 block text-[10px]">رئيس القسم المعتمد:</span>
-                <span className="font-bold text-emerald-300">{pr.assigned_reviewer?.name || 'غير محدد'}</span>
+              <div className="min-w-0">
+                <dt className="text-[10px] text-slate-500">اعتمده</dt>
+                <dd className="font-bold text-emerald-300 break-words">{pr.assigned_reviewer?.name || 'غير محدد'}</dd>
               </div>
-              <div>
-                <span className="text-slate-400 block text-[10px]">تاريخ الحاجة:</span>
-                <span className="font-mono text-slate-200">{pr.date_needed || '-'}</span>
+              <div className="min-w-0">
+                <dt className="text-[10px] text-slate-500">مطلوب يوم</dt>
+                <dd dir="ltr" className="font-mono text-right text-slate-200">{pr.date_needed || '-'}</dd>
               </div>
-            </div>
+            </dl>
 
-            <div className="pt-2">
-              <h3 className="text-xs font-semibold text-slate-300 mb-2">عناصر الطلب المعتمدة بالمواصفات الفنية:</h3>
+            <details className="group rounded-xl border border-slate-800 bg-slate-950/50">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-xs font-bold text-slate-300 hover:text-slate-100 [&::-webkit-details-marker]:hidden">
+                <span>عرض بنود الطلب ({pr.items?.length || 0})</span>
+                <span aria-hidden="true" className="text-slate-500 transition-transform group-open:rotate-180">⌄</span>
+              </summary>
+              <div className="border-t border-slate-800 p-3">
               <div className="overflow-x-auto hidden md:block">
                 <table className="w-full text-right text-xs">
                   <thead className="bg-slate-950/80 text-slate-400 border-b border-slate-800">
@@ -1108,19 +1088,16 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                   </article>
                 ))}
               </div>
-            </div>
+              </div>
+            </details>
 
             <UnifiedNotesCard request={pr} />
           </Card>
         )}
 
         {/* SECTION 2: PURCHASE ORDER COMMERCIAL DATA (EDITABLE) */}
-        <Card className="space-y-6 bg-slate-950 border-slate-800">
-          <div className="border-b border-slate-800 pb-3">
-            <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-              <span>💳</span> القسم الثاني: البيانات التجارية والمالية لأمر الشراء
-            </h2>
-          </div>
+        <Card className="space-y-5 bg-slate-950 border-slate-800">
+          <h2 className="text-sm font-bold text-slate-100">بيانات أمر الشراء</h2>
 
           {/* المورد and Header Options */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1164,42 +1141,39 @@ export const CreatePurchaseOrderPage: React.FC = () => {
           </div>
 
           {/* Document Reference Numbers (Manual PR / PO) */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-              <h3 className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
-                <span>📑</span> أرقام الدورة المستندية الورقية / اليدوية (اختياري)
-              </h3>
-              <span className="text-[11px] text-slate-400">
-                في حال تركها فارغة، يعتمد النظام تلقائياً على الترقيم الآلي
-              </span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <details className="group rounded-xl border border-slate-800 bg-slate-900/60">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-xs font-bold text-slate-300 hover:text-slate-100 [&::-webkit-details-marker]:hidden">
+              <span>أرقام ورقية <span className="font-normal text-slate-500">(اختياري)</span></span>
+              <span aria-hidden="true" className="text-slate-500 transition-transform group-open:rotate-180">⌄</span>
+            </summary>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-800 p-4">
+              <p className="md:col-span-2 text-[11px] text-slate-500">لو سبتها فاضية، النظام هيرقّم تلقائياً.</p>
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  رقم طلب الشراء الورقي / اليدوي (Manual PR No.)
+                  رقم طلب الشراء الورقي
                 </label>
                 <input
                   type="text"
                   value={manualPrNumber}
                   onChange={(e) => setManualPrNumber(e.target.value)}
-                  placeholder="مثال: PR-MAN-2026/01 (اختياري)"
+                  placeholder="مثال: PR-MAN-2026/01"
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2.5 text-xs text-slate-100 placeholder:text-slate-500 font-mono focus:outline-none focus:border-cyan-500 min-h-10"
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  رقم أمر الشراء الورقي / اليدوي (Manual PO No.)
+                  رقم أمر الشراء الورقي
                 </label>
                 <input
                   type="text"
                   value={manualPoNumber}
                   onChange={(e) => setManualPoNumber(e.target.value)}
-                  placeholder="مثال: PO-MAN-2026/01 (اختياري)"
+                  placeholder="مثال: PO-MAN-2026/01"
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2.5 text-xs text-slate-100 placeholder:text-slate-500 font-mono focus:outline-none focus:border-cyan-500 min-h-10"
                 />
               </div>
             </div>
-          </div>
+          </details>
 
           {/* Multi-supplier Direct Purchase Helper Banner */}
           {hasMultipleDirectSuppliers && pr && (
@@ -1219,25 +1193,18 @@ export const CreatePurchaseOrderPage: React.FC = () => {
           )}
 
           {/* Workflow & Item Separation/Grouping Controls */}
-          <div className="rounded-2xl border border-cyan-800/40 bg-gradient-to-r from-slate-900 via-slate-900/95 to-cyan-950/30 p-4 space-y-3.5 shadow-lg">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <span className="text-xl">⚙️</span>
-                <div>
-                  <h3 className="text-xs sm:text-sm font-bold text-slate-100 flex items-center gap-2">
-                    <span>دورة تداول البنود (فصل البنود المنفصلة وتجميع شحنات المواد الإنشائية)</span>
-                  </h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    الأصل: استلام كل بند بمعزل عن غيره وتوليد إذن استلام وأمر شراء فعلي منفصل. يمكنك تجميع مقاسات حديد التسليح والمواد المشتركة في شحنة واحدة.
-                  </p>
-                </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <div className="min-w-0">
+                <h3 className="text-xs font-bold text-slate-100">تجميع البنود</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">كل بند بيتصدر لوحده، إلا لو جمّعته.</p>
               </div>
 
               {/* Mode switch (not offered when the department's orders are consolidated by the server) */}
               {consolidatedRequired ? (
                 <span
                   data-testid="consolidated-po-badge"
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-950/60 border border-emerald-700/60 px-3 py-1.5 text-xs font-bold text-emerald-300 shrink-0"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-950/60 border border-emerald-700/60 px-3 py-1.5 text-xs font-bold text-emerald-300 max-w-full"
                 >
                   🧾 أمر شراء مجمع إلزامي لهذا القسم (أمر لكل مورد)
                 </span>
@@ -1252,7 +1219,7 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  ⚡ الوضع الافتراضي (فصل البنود)
+                  كل بند لوحده
                 </button>
                 <button
                   type="button"
@@ -1309,7 +1276,7 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                       className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-700/60 px-3 py-1.5 text-xs font-bold transition-all cursor-pointer"
                       title="تجميع كافة بنود حديد التسليح تلقائياً في وزنة بسكول واحدة"
                     >
-                      <span>🏗️</span> تجميع تلقائي لحديد التسليح
+                      <span>🏗️</span> تجميع الحديد تلقائياً
                     </button>
                   )}
                 </div>
@@ -1320,7 +1287,7 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                     onClick={handleResetAllSeparations}
                     className="text-xs text-slate-400 hover:text-rose-300 underline underline-offset-4 transition-colors cursor-pointer"
                   >
-                    إعادة تعيين (فصل تام لكافة البنود)
+                    إعادة تعيين
                   </button>
                 </div>
               </div>
@@ -1330,11 +1297,11 @@ export const CreatePurchaseOrderPage: React.FC = () => {
           {/* Commercial Line Items */}
           <div className="space-y-3 pt-2">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <h3 className="text-xs font-bold text-slate-200">جدول البنود التجارية والأسعار (بالجنيه المصري EGP / ج.م):</h3>
+              <h3 className="text-xs font-bold text-slate-200">البنود والأسعار <span className="font-normal text-slate-500">(بالجنيه)</span></h3>
               {poItems.some((i) => i.is_rebar_converted) && (
                 <span className="rounded-lg bg-emerald-950/80 border border-emerald-700/60 px-2.5 py-1 text-[11px] font-bold text-emerald-300 flex items-center gap-1.5 shadow-sm">
                   <span>🔄</span>
-                  <span>تم تحويل حديد التسليح تلقائياً من (طرد) إلى (طن)</span>
+                  <span>الحديد اتحوّل من طرد لطن</span>
                 </span>
               )}
             </div>
@@ -1356,17 +1323,17 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                       </th>
                     )}
                     <th className="p-3">#</th>
-                    <th className="p-3">مسار المستند والتوزيع</th>
-                    <th className="p-3">رقم قطعة الأرض</th>
+                    <th className="p-3">التجميع</th>
+                    <th className="p-3">القطعة</th>
                     <th className="p-3">المنطقة</th>
                     <th className="p-3">الصنف</th>
-                    <th className="p-3">المورد المعتمد</th>
+                    <th className="p-3">المورد</th>
                     <th className="p-3">الوحدة</th>
-                    <th className="p-3">كمية طلب الشراء (PR)</th>
-                    <th className="p-3">كمية أمر الشراء (PO)</th>
-                    <th className="p-3">الفرق بين الكميتين</th>
-                    <th className="p-3">سعر الوحدة (EGP / ج.م)</th>
-                    <th className="p-3">إجمالي البند (EGP / ج.م)</th>
+                    <th className="p-3">الكمية المطلوبة</th>
+                    <th className="p-3">كمية الأمر</th>
+                    <th className="p-3">الفرق</th>
+                    <th className="p-3">سعر الوحدة</th>
+                    <th className="p-3">الإجمالي</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -1413,8 +1380,7 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                             type="text"
                             required
                             value={item.item_reference}
-                            readOnly
-                            aria-readonly="true"
+                            onChange={(e) => handleItemTextChange(index, 'item_reference', e.target.value)}
                             placeholder="رقم قطعة الأرض"
                             dir="ltr"
                             className="w-32 bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
@@ -1511,7 +1477,6 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                             required
                             value={item.unit_price ?? ''}
                             onFocus={(e) => e.target.select()}
-                            readOnly={Boolean(pr?.selected_quote?.id)}
                             onChange={(e) => handleItemPriceChange(index, e.target.value)}
                             placeholder={item.uom === 'TON' ? 'سعر الطن...' : '0.00'}
                             title={item.uom === 'TON' ? 'سعر الطن بالجنيه المصري' : 'سعر الوحدة'}
@@ -1540,50 +1505,43 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                 const isQtyChanged = diff !== 0;
 
                 return (
-                  <article key={`mobile-po-item-${item.pr_item_id || index}`} className={`rounded-xl border border-slate-800 bg-slate-900/90 p-4 space-y-3 shadow-lg ${item.selected ? 'ring-1 ring-cyan-500' : ''}`}>
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-                      <div className="flex items-center gap-2">
-                        {orderMode === 'SEPARATE_DEFAULT' && (
-                          <input
-                            type="checkbox"
-                            checked={Boolean(item.selected)}
-                            disabled={Boolean(item.is_already_ordered)}
-                            onChange={() => handleToggleSelectItem(index)}
-                            className="rounded border-slate-700 text-cyan-500 focus:ring-0 cursor-pointer disabled:opacity-30"
-                          />
-                        )}
-                        <span className="font-bold text-slate-100 text-sm">{item.item_description}</span>
+                  <article key={`mobile-po-item-${item.pr_item_id || index}`} className={`rounded-xl border border-slate-800 bg-slate-900/90 p-3.5 space-y-3 ${item.selected ? 'ring-1 ring-cyan-500' : ''}`}>
+                    <div className="flex items-start gap-2.5 border-b border-slate-800 pb-2.5">
+                      {orderMode === 'SEPARATE_DEFAULT' && (
+                        <input
+                          type="checkbox"
+                          aria-label={`تحديد البند ${index + 1}`}
+                          checked={Boolean(item.selected)}
+                          disabled={Boolean(item.is_already_ordered)}
+                          onChange={() => handleToggleSelectItem(index)}
+                          className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-700 text-cyan-500 focus:ring-0 cursor-pointer disabled:opacity-30"
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <span className="block break-words text-sm font-bold text-slate-100">{item.item_description}</span>
+                        {item.is_already_ordered ? (
+                          <span className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-950/80 border border-emerald-700/70 px-2 py-0.5 text-[10.5px] font-bold text-emerald-300">
+                            ✅ اتصدر قبل كده
+                          </span>
+                        ) : item.group_id ? (
+                          <span className="mt-1 inline-flex max-w-full items-center gap-1 rounded bg-amber-950/80 border border-amber-600/70 px-2 py-0.5 text-[10.5px] font-bold text-amber-300">
+                            <span className="truncate">{item.group_type === 'STEEL_WEIGHING' ? '⚖️' : '🚚'} {item.group_name || 'مجمّع'}</span>
+                          </span>
+                        ) : null}
                       </div>
-                      <span className="shrink-0 rounded bg-cyan-950 border border-cyan-800/60 px-2 py-0.5 text-[10px] font-bold text-cyan-300 font-mono">
-                        #{index + 1}
+                      <span className="shrink-0 font-mono text-[11px] font-bold text-slate-500">
+                        {index + 1}
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-slate-400">مسار المستند:</span>
-                      {item.is_already_ordered ? (
-                        <span className="inline-flex items-center gap-1 rounded bg-emerald-950/80 border border-emerald-700/70 px-2 py-0.5 text-[10.5px] font-bold text-emerald-300">
-                          ✅ تم إصداره مسبقاً
-                        </span>
-                      ) : item.group_id ? (
-                        <span className="inline-flex items-center gap-1 rounded bg-amber-950/80 border border-amber-600/70 px-2 py-0.5 text-[10.5px] font-bold text-amber-300">
-                          🔗 {item.group_name || 'حزمة مدمجة'}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded bg-slate-800 border border-slate-700 px-2 py-0.5 text-[10.5px] font-bold text-cyan-300">
-                          📦 أمر شراء مستقل
-                        </span>
-                      )}
-                    </div>
-
                     <div className="text-xs">
-                      <label className="block text-[10px] text-slate-400 font-semibold mb-1">المورد المعتمد للبند</label>
+                      <label className="block text-[10px] text-slate-400 font-semibold mb-1">المورد</label>
                       <select
                         value={item.supplier_id || ''}
                         onChange={(e) => handleItemSupplierChange(index, e.target.value ? Number(e.target.value) : null)}
                         className="h-10 w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 text-xs text-slate-100 focus:border-cyan-500 focus:outline-none"
                       >
-                        <option value="">{(supplierId || effectiveSupplierId) ? '(المورد الرئيسي لأمر الشراء)' : 'اختر المورد'}</option>
+                        <option value="">{(supplierId || effectiveSupplierId) ? '(المورد الرئيسي)' : 'اختر المورد'}</option>
                         {suppliers.map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.company_name}
@@ -1595,7 +1553,7 @@ export const CreatePurchaseOrderPage: React.FC = () => {
 
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div>
-                        <label className="block text-[10px] text-slate-400 font-semibold mb-1">رقم قطعة الأرض *</label>
+                        <label className="block text-[10px] text-slate-400 font-semibold mb-1">القطعة *</label>
                         <input
                           type="text"
                           required
@@ -1619,16 +1577,21 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 text-xs">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="min-w-0">
+                        <div className="flex items-center justify-between gap-1 mb-1">
                           <label className="text-[10px] text-slate-400 font-semibold">
                             الكمية
                           </label>
-                          <span className="text-[10px] text-slate-500 font-mono">
+                          <span className="truncate text-[10px] text-slate-500">
                             {item.is_rebar_converted
                               ? `${item.raw_pr_quantity} طرد`
-                              : `PR: ${item.original_quantity}`}
+                              : `المطلوب ${item.original_quantity}`}
+                            {isQtyChanged && (
+                              <span className={`mr-1 font-mono font-bold ${diff > 0 ? 'text-amber-400' : 'text-rose-400'}`}>
+                                ({diff > 0 ? `+${formatCleanNumber(diff)}` : formatCleanNumber(diff)})
+                              </span>
+                            )}
                           </span>
                         </div>
                         <input
@@ -1642,7 +1605,7 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                           className="h-10 w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 text-xs text-slate-100 font-mono font-bold"
                         />
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <label className="text-[10px] text-slate-400 font-semibold block mb-1">
                           الوحدة
                         </label>
@@ -1661,17 +1624,10 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                           ))}
                         </select>
                       </div>
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-[10px] text-slate-400 font-semibold">
-                            {item.uom === 'TON' ? 'سعر الطن' : 'السعر (ج.م)'}
-                          </label>
-                          {isQtyChanged && (
-                            <span className={`text-[10px] font-mono font-bold ${diff > 0 ? 'text-amber-400' : 'text-rose-400'}`}>
-                              {diff > 0 ? `+${formatCleanNumber(diff)}` : formatCleanNumber(diff)}
-                            </span>
-                          )}
-                        </div>
+                      <div className="col-span-2">
+                        <label className="text-[10px] text-slate-400 font-semibold block mb-1">
+                          {item.uom === 'TON' ? 'سعر الطن (ج.م)' : 'سعر الوحدة (ج.م)'}
+                        </label>
                         <input
                           type="number"
                           step="any"
@@ -1686,8 +1642,8 @@ export const CreatePurchaseOrderPage: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between bg-slate-950/80 rounded-xl px-3 py-2 border border-slate-800/80">
-                      <span className="text-[11px] text-slate-400 font-semibold">إجمالي البند:</span>
+                    <div className="flex items-center justify-between gap-2 bg-slate-950/80 rounded-xl px-3 py-2 border border-slate-800/80">
+                      <span className="text-[11px] text-slate-400 font-semibold">إجمالي البند</span>
                       <CurrencyDisplay
                         amount={lineTotal}
                         amountClassName="font-mono text-emerald-400 font-black text-sm"
@@ -1700,19 +1656,18 @@ export const CreatePurchaseOrderPage: React.FC = () => {
 
             {/* Grand Total Summary Box (EGP) with Arabic Tafqeet */}
             <div className="rounded-xl border border-emerald-900/60 bg-emerald-950/20 p-4 space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-bold text-slate-200">
-                  إجمالي أمر الشراء التجاري (بالجنيه المصري EGP / ج.م):
+                  إجمالي أمر الشراء
                 </span>
                 <CurrencyDisplay
                   amount={calculateGrandTotal()}
                   amountClassName="text-xl font-mono font-black text-emerald-400"
                 />
               </div>
-              <div className="text-xs font-bold text-emerald-300/90 border-t border-emerald-900/40 pt-2 font-sans flex items-center gap-1.5">
-                <span className="text-slate-400 font-normal">المبلغ بالحروف:</span>
-                <span>{tafqeetCurrency(calculateGrandTotal())}</span>
-              </div>
+              <p className="text-xs font-bold leading-5 text-emerald-300/90 border-t border-emerald-900/40 pt-2">
+                {tafqeetCurrency(calculateGrandTotal())}
+              </p>
             </div>
 
             {consolidatedRequired && (
@@ -1765,16 +1720,10 @@ export const CreatePurchaseOrderPage: React.FC = () => {
             )}
 
             {/* Purchase Orders Batch Issuance Summary */}
-            {!consolidatedRequired && (
-            <div className="rounded-xl border border-cyan-800/50 bg-slate-900/90 p-4 space-y-2.5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
-                  <span>📊</span>
-                  <span>ملخص أوامر الشراء التي سيتم إصدارها:</span>
-                </div>
-                <span className="text-xs font-mono font-black text-cyan-300 bg-cyan-950 border border-cyan-800 px-2.5 py-0.5 rounded-full">
-                  إجمالي: {resolvedGroups.length} أمر شراء {orderMode === 'SEPARATE_DEFAULT' ? 'مستقل/مدمج' : 'موحد'}
-                </span>
+            {!consolidatedRequired && resolvedGroups.length > 1 && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-3.5 space-y-2.5">
+              <div className="text-xs font-bold text-slate-200">
+                هيتصدر {resolvedGroups.length} أوامر شراء
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
                 {resolvedGroups.map((g, gIdx) => (
@@ -1801,53 +1750,40 @@ export const CreatePurchaseOrderPage: React.FC = () => {
           </div>
 
           {/* Form الإجراءات */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-800">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-3 pt-4 border-t border-slate-800 sm:flex-row-reverse sm:items-center sm:justify-between">
+            <button
+              type="submit"
+              disabled={loading || !hasSupplier || !prId || (consolidatedRequired && (previewLoading || Boolean(previewError)))}
+              className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 text-sm px-6 py-3 rounded-xl font-black shadow-lg shadow-amber-900/30 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+              title={!hasSupplier ? 'يرجى تحديد المورد المعتمد لتفعيل زر الإصدار' : undefined}
+            >
+              {loading ? 'جاري إصدار وإرسال أوامر الشراء...' : consolidatedRequired ? `إصدار وإرسال (${consolidatedOrderCount}) أمر شراء مجمع للاستلام ←` : resolvedGroups.length > 1 ? `إصدار وإرسال (${resolvedGroups.length}) أمر شراء للاستلام ←` : 'إصدار وإرسال أمر الشراء للاستلام ←'}
+            </button>
+
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setShowCombinedPrintModal(true)}
                 disabled={!prId || poItems.length === 0}
-                className="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-800/50 text-xs px-4 py-2.5 rounded-lg font-bold transition-all disabled:opacity-50"
-                title="توليد وطباعة ملف PDF مدمج يضم طلب الشراء وأمر الشراء فقط دون إذن الاستلام"
+                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs px-3.5 py-2.5 rounded-lg font-bold transition-all disabled:opacity-50 cursor-pointer"
+                title="طباعة طلب الشراء وأمر الشراء في ملف واحد (من غير إذن استلام)"
               >
-                <span>🖨️</span> طباعة المستند المدمج (PR + PO)
+                <span>🖨️</span> طباعة
               </button>
               <button
                 type="button"
                 onClick={handleDirectWhatsAppShare}
                 disabled={!prId || poItems.length === 0}
-                className="inline-flex items-center gap-2 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/60 text-xs px-4 py-2.5 rounded-lg font-bold transition-all disabled:opacity-50"
-                title="مشاركة تفاصيل أمر الشراء وطلب الشراء عبر تطبيق واتساب"
+                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 text-xs px-3.5 py-2.5 rounded-lg font-bold transition-all disabled:opacity-50 cursor-pointer"
               >
-                <span>📱</span> إرسال واتساب
+                <span>📱</span> واتساب
               </button>
-            </div>
-
-            <div className="flex items-center space-x-3 space-x-reverse">
               <button
                 type="button"
                 onClick={() => navigate(-1)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-4 py-2.5 rounded-lg font-medium transition"
+                className="px-2 py-2.5 text-xs font-bold text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
               >
                 إلغاء
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowCombinedPrintModal(true)}
-                disabled={!prId || poItems.length === 0}
-                className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-xs px-5 py-2.5 rounded-lg font-black shadow-lg shadow-amber-900/30 transition-all border border-amber-500/30 disabled:opacity-50 cursor-pointer"
-                title="طباعة نموذج A4 مدمج يضم طلب الشراء وأمر الشراء (بدون إذن استلام) مطابق للنموذج المعتمد"
-              >
-                <span className="text-sm">🖨️</span>
-                <span>طباعة المستند المدمج</span>
-              </button>
-              <button
-                type="submit"
-                disabled={loading || !hasSupplier || !prId || (consolidatedRequired && (previewLoading || Boolean(previewError)))}
-                className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs px-6 py-2.5 rounded-lg font-bold shadow-lg shadow-cyan-600/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
-                title={!hasSupplier ? 'يرجى تحديد المورد المعتمد لتفعيل زر الإصدار' : undefined}
-              >
-                {loading ? 'جاري إصدار وإرسال أوامر الشراء...' : consolidatedRequired ? `إصدار وإرسال (${consolidatedOrderCount}) أمر شراء مجمع للاستلام ←` : resolvedGroups.length > 1 ? `إصدار وإرسال (${resolvedGroups.length}) أمر شراء للاستلام ←` : 'إصدار وإرسال أمر الشراء للاستلام ←'}
               </button>
             </div>
           </div>
