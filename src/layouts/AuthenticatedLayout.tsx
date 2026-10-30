@@ -432,7 +432,7 @@ export const AuthenticatedLayout: React.FC = () => {
                                 onClick={() => { setSidebarOpen(current => !current); setMobileMenuOpen(false); }}
                                 aria-label={sidebarOpen ? 'إخفاء القائمة الجانبية' : 'إظهار القائمة الجانبية'}
                                 aria-expanded={sidebarOpen}
-                                className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-white/10 bg-slate-900/80 px-2.5 text-lg text-gold-300 shadow-inner hover:border-gold-500/50 hover:bg-slate-800 active:scale-95 transition-all"
+                                className="hidden md:flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-white/10 bg-slate-900/80 px-2.5 text-lg text-gold-300 shadow-inner hover:border-gold-500/50 hover:bg-slate-800 active:scale-95 transition-all"
                             >
                                 {sidebarOpen ? '‹' : '☰'}
                             </button>
@@ -490,7 +490,7 @@ export const AuthenticatedLayout: React.FC = () => {
                         </div>
 
                         {/* Mobile & Small Tablet Quick Nav */}
-                        <div className="md:hidden flex items-center gap-1.5 sm:gap-2">
+                        <div className="md:hidden flex shrink-0 items-center gap-1 sm:gap-2">
                             <GlobalSearchBar />
                             <NotificationBell />
                             <Link

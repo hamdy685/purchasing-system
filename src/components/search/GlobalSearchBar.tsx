@@ -353,7 +353,7 @@ export const GlobalSearchBar: React.FC = () => {
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/80 px-3 py-1.5 text-xs text-slate-400 shadow-sm transition-all hover:border-cyan-500/60 hover:bg-slate-800 hover:text-slate-200 cursor-pointer"
+        className="flex min-h-10 min-w-10 items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-xs text-slate-400 shadow-sm transition-all hover:border-cyan-500/60 hover:bg-slate-800 hover:text-slate-200 cursor-pointer sm:px-3"
         title="البحث السريع (Ctrl + K)"
         aria-label="البحث السريع في النظام"
       >
@@ -361,7 +361,6 @@ export const GlobalSearchBar: React.FC = () => {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
         </svg>
         <span className="hidden sm:inline">ابحث عن طلب، أمر شراء، صفحة...</span>
-        <span className="sm:hidden">بحث...</span>
         <kbd className="hidden rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-mono text-slate-400 border border-slate-700 sm:inline-block">
           Ctrl K
         </kbd>
