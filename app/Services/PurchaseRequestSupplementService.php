@@ -211,6 +211,7 @@ class PurchaseRequestSupplementService
                     'action' => 'SUBMIT_AND_APPROVE_SUPPLEMENT',
                     'from_state' => $pr->status,
                     'to_state' => $pr->status,
+                    'user_note' => ApprovalHistory::typedNote($notes),
                     'comments' => "تم إنشاء واعتماد طلب كمالة (دفعة {$nextBatch}) بواسطة المراجع وتوجيهه لإدارة المشتريات للتسعير والربط بأمر الشراء" . ($notes ? ": {$notes}" : ''),
                 ]);
 
@@ -231,6 +232,7 @@ class PurchaseRequestSupplementService
                     'action' => 'SUBMIT_SUPPLEMENT',
                     'from_state' => $pr->status,
                     'to_state' => $pr->status,
+                    'user_note' => ApprovalHistory::typedNote($notes),
                     'comments' => "تم إنشاء طلب كمالة (دفعة {$nextBatch}) بواسطة {$creator->name} بانتظار مراجعة واعتماد مراجع القسم وتحديد جهة الاستلام" . ($notes ? ": {$notes}" : ''),
                 ]);
 
@@ -355,6 +357,7 @@ class PurchaseRequestSupplementService
                 'action' => 'REJECT_SUPPLEMENT',
                 'from_state' => $pr->status,
                 'to_state' => $pr->status,
+                'user_note' => ApprovalHistory::typedNote($reason),
                 'comments' => "تم رفض طلب الكمالة (دفعة {$supplement->batch_number}) من قِبل مراجع القسم: {$reason}",
             ]);
 

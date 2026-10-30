@@ -106,7 +106,6 @@ export interface ExcelGridRow {
   receipt_id: number | null;
   pr_number: string;
   po_number: string;
-  actual_po_number: string;
   receipt_number: string;
   department: string;
   supplier: string;

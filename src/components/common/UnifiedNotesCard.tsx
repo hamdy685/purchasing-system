@@ -100,17 +100,14 @@ export const UnifiedNotesCard: React.FC<UnifiedNotesCardProps> = ({
     });
   }
 
-  // 2. Item-Specific Notes & Technical Specs
+  // 2. Item notes (specifications already show in the items table)
   const items = pr?.items || po?.items || [];
   items.forEach((item, idx) => {
     const itemNum = idx + 1;
-    const hasSpec = Boolean(item.specifications && item.specifications.trim());
     const hasItemNotes = Boolean('notes' in item && item.notes && (item.notes as string).trim());
 
-    if (hasSpec || hasItemNotes) {
-      const parts: string[] = [];
-      if (hasSpec) parts.push(`المواصفات: ${item.specifications}`);
-      if (hasItemNotes) parts.push(`ملاحظة: ${(item as any).notes}`);
+    if (hasItemNotes) {
+      const parts: string[] = [`ملاحظة: ${(item as any).notes}`];
 
       const metaParts: string[] = [];
       if (item.item_reference) metaParts.push(`قطعة: ${item.item_reference}`);
@@ -131,12 +128,12 @@ export const UnifiedNotesCard: React.FC<UnifiedNotesCardProps> = ({
     }
   });
 
-  // 3. Approval History Decisions & Comments
+  // 3. Notes people typed on approval actions (system default texts never show here)
   const history: ApprovalHistoryEntry[] = pr?.approval_history || (po?.approval_history as any) || [];
   history.forEach((entry, idx) => {
-    if (entry.comments && entry.comments.trim()) {
+    if (entry.user_note && entry.user_note.trim()) {
       const mapping = ACTION_MAPPING[entry.action] || {
-        label: entry.action,
+        label: 'ملاحظة',
         category: 'reviewer' as const,
         color: 'bg-slate-800 text-slate-300 border-slate-700',
       };
@@ -149,7 +146,7 @@ export const UnifiedNotesCard: React.FC<UnifiedNotesCardProps> = ({
         badgeLabel: mapping.label,
         badgeColor: mapping.color,
         date: entry.created_at,
-        content: entry.comments,
+        content: entry.user_note,
       });
     }
   });

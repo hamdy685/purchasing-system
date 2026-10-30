@@ -25,7 +25,6 @@ export interface MasterOrderRow {
   order_id: number | null;
   request_id: number | null;
   po_number: string;
-  manual_po_number?: string | null;
   pr_number: string;
   department: {
     id?: number | null;

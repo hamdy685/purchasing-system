@@ -153,8 +153,8 @@ class ConsolidatedPoFoundationTest extends TestCase
             $this->assertTrue(Schema::hasColumn('purchase_orders', $column), $column);
         }
 
-        // This migration and the later high-value one (Phase 3) are the two most recent.
-        $this->artisan('migrate:rollback', ['--step' => 2])->assertExitCode(0);
+        // Roll back this migration plus the two later ones (high-value acknowledgement, approval history user_note).
+        $this->artisan('migrate:rollback', ['--step' => 3])->assertExitCode(0);
         $this->assertFalse(Schema::hasTable('purchase_order_item_sources'));
         $this->assertFalse(Schema::hasColumn('purchase_orders', 'idempotency_key'));
         $this->assertTrue(Schema::hasTable('steel_item_components'), 'earlier migrations are untouched');

@@ -31,7 +31,6 @@ class PurchaseRequestResource extends JsonResource
         return [
             'id' => $this->id,
             'request_number' => $this->request_number,
-            'manual_request_number' => $this->manual_request_number,
             'request_type' => $this->request_type ?? 'PROJECT',
             'project_name' => $this->project_name ?? ($this->request_type === 'OFFICE_SUPPLIES' ? 'المقر الرئيسي / إداري' : null),
             'is_complementary' => $this->isComplementaryRequest(),
@@ -212,6 +211,7 @@ class PurchaseRequestResource extends JsonResource
                     'from_state' => $entry->from_state,
                     'to_state' => $entry->to_state,
                     'comments' => $entry->comments,
+                    'user_note' => $entry->user_note,
                     'created_at' => $entry->created_at?->toIso8601String(),
                     'actor' => $entry->relationLoaded('actor') && $entry->actor ? [
                         'id' => $entry->actor->id,

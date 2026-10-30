@@ -217,6 +217,7 @@ class GeneralManagerPurchaseRequestService
                 'action' => 'EDITED_BY_EXECUTIVE',
                 'from_state' => $oldState,
                 'to_state' => $nextStatus,
+                'user_note' => ApprovalHistory::typedNote($data['comment'] ?? null),
                 'comments' => $data['comment'] ?? ($isDirect ? 'تم اعتماد وتعديل الطلب من المدير التنفيذي وإحالته للإدارة المالية.' : 'تم تعديل الطلب من المدير التنفيذي وإرساله للمشتريات.'),
             ]);
 
@@ -296,6 +297,7 @@ class GeneralManagerPurchaseRequestService
                 'action' => 'APPROVED_BY_EXECUTIVE',
                 'from_state' => self::PENDING_STATUS,
                 'to_state' => $nextStatus,
+                'user_note' => ApprovalHistory::typedNote($comment),
                 'comments' => $comment ?? $defaultComment,
             ]);
 
@@ -375,6 +377,7 @@ class GeneralManagerPurchaseRequestService
                 'action' => 'REJECTED_BY_EXECUTIVE',
                 'from_state' => self::PENDING_STATUS,
                 'to_state' => 'REJECTED',
+                'user_note' => ApprovalHistory::typedNote($comment),
                 'comments' => $comment,
             ]);
 

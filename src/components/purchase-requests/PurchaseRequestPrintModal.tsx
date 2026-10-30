@@ -51,7 +51,7 @@ export const PurchaseRequestPrintModal: React.FC<PurchaseRequestPrintModalProps>
   const handleShare = () => {
     const text = [
       '🏢 شركة إشبيلية للتطوير العقاري والمقاولات',
-      '📄 طلب شراء رقم: ' + (pr.manual_request_number ? `${pr.request_number} (يدوي: ${pr.manual_request_number})` : pr.request_number),
+      '📄 طلب شراء رقم: ' + pr.request_number,
       '👤 صاحب الطلب: ' + (pr.requester?.name || '—'),
       '🏢 القسم: ' + (pr.department?.name || '—'),
       '📍 المشروع: ' + (pr.region || pr.items?.[0]?.region || '—'),
@@ -63,7 +63,7 @@ export const PurchaseRequestPrintModal: React.FC<PurchaseRequestPrintModalProps>
   const items = pr.items || [];
   const emptyRowsCount = Math.max(TOTAL_FIXED_ROWS - items.length, 0);
 
-  const requestNumber = pr.manual_request_number ? `${pr.request_number} (${pr.manual_request_number})` : pr.request_number;
+  const requestNumber = pr.request_number;
   const isOfficePr = pr.request_type === 'OFFICE_SUPPLIES';
   const displayProject = pr.project_name?.trim() || (isOfficePr ? 'المقر الرئيسي / إداري' : 'غير مسجل');
   const displayRegion = (pr.region || pr.items?.find((i) => i.region)?.region)?.trim() || 'غير مسجلة';

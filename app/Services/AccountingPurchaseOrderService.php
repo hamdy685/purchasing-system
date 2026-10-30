@@ -65,6 +65,7 @@ class AccountingPurchaseOrderService
                 'action' => 'ACCOUNTING_APPROVED',
                 'from_state' => 'PENDING_ACCOUNTING_REVIEW',
                 'to_state' => 'APPROVED_BY_ACCOUNTING',
+                'user_note' => ApprovalHistory::typedNote($comment),
                 'comments' => $comment ?? 'Financial review approved by accounting.',
             ]);
 
@@ -80,6 +81,7 @@ class AccountingPurchaseOrderService
                     'action'      => 'PO_APPROVED_BY_ACCOUNTING',
                     'from_state'  => $prFromState,
                     'to_state'    => 'ISSUED',
+                    'user_note'    => ApprovalHistory::typedNote($comment),
                     'comments'    => 'تم اعتماد أمر الشراء محاسبياً رقم ' . $lockedPo->po_number . ($comment ? " ({$comment})" : ''),
                 ]);
             }
@@ -138,6 +140,7 @@ class AccountingPurchaseOrderService
                 'action' => 'RETURNED_TO_PROCUREMENT',
                 'from_state' => 'PENDING_ACCOUNTING_REVIEW',
                 'to_state' => 'RETURNED_TO_PROCUREMENT',
+                'user_note' => ApprovalHistory::typedNote($comment),
                 'comments' => $comment,
             ]);
 

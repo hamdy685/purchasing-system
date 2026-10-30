@@ -64,7 +64,7 @@ export const PurchaseOrderPrintModal: React.FC<PurchaseOrderPrintModalProps> = (
   const handleShare = () => {
     const text = [
       '🏢 شركة إشبيلية للتطوير العقاري والمقاولات',
-      '📑 ' + (isActual ? 'أمر شراء فعلي رقم: ' : 'أمر شراء رقم: ') + (po.manual_po_number ? `${po.po_number} (يدوي: ${po.manual_po_number})` : po.po_number),
+      '📑 ' + (isActual ? 'أمر شراء فعلي رقم: ' : 'أمر شراء رقم: ') + po.po_number,
       '🏬 المورد: ' + (po.supplier?.company_name || '—'),
       '📍 المشروع: ' + (po.purchase_request?.region || items[0]?.region || '—'),
       '💰 الإجمالي: ' + formatCleanNumber(grandTotal) + ' ج.م',
@@ -75,7 +75,7 @@ export const PurchaseOrderPrintModal: React.FC<PurchaseOrderPrintModalProps> = (
   const discountRowsCount = (financials.discountAmount > 0 || Number(po.discount_amount) > 0) ? 2 : 0;
   const emptyRowsCount = Math.max(TOTAL_FIXED_ROWS - items.length - discountRowsCount, 0);
 
-  const requestNumber = po.manual_po_number || po.purchase_request?.manual_request_number || po.po_number || po.purchase_request?.request_number || '—';
+  const requestNumber = po.po_number || po.purchase_request?.request_number || '—';
   const isOfficePr = po.purchase_request?.request_type === 'OFFICE_SUPPLIES';
   const displayProject = po.project_name?.trim() || po.purchase_request?.project_name?.trim() || (isOfficePr ? 'المقر الرئيسي / إداري' : 'غير مسجل');
   const displayRegion = (po.region || po.purchase_request?.region || po.items?.find((i) => i.region)?.region)?.trim() || 'غير مسجلة';

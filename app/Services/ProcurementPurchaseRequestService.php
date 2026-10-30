@@ -239,6 +239,7 @@ class ProcurementPurchaseRequestService
                 'action' => 'THREE_QUOTES_REQUIRED',
                 'from_state' => $fromState,
                 'to_state' => 'PENDING_QUOTE_RECOMMENDATIONS',
+                'user_note' => ApprovalHistory::typedNote($comment),
                 'comments' => $comment ?? 'بدأ مدير المشتريات تجهيز عروض أسعار من موردين مختلفين.',
             ]);
 
@@ -377,6 +378,7 @@ class ProcurementPurchaseRequestService
                 'action' => $action,
                 'from_state' => $fromState,
                 'to_state' => 'PENDING_EXECUTIVE_APPROVAL',
+                'user_note' => ApprovalHistory::typedNote($comment),
                 'comments' => $actionComment,
             ]);
 
@@ -641,6 +643,7 @@ class ProcurementPurchaseRequestService
                 'action' => 'REJECTED_BY_PROCUREMENT',
                 'from_state' => $fromState,
                 'to_state' => 'REJECTED',
+                'user_note' => ApprovalHistory::typedNote($comment),
                 'comments' => $comment,
             ]);
 
@@ -708,6 +711,7 @@ class ProcurementPurchaseRequestService
                 'action' => 'ROUTE_RESET_TO_PENDING',
                 'from_state' => $oldStatus,
                 'to_state' => 'PENDING_PROCUREMENT_APPROVAL',
+                'user_note' => ApprovalHistory::typedNote($comment),
                 'comments' => $comment ?? 'تم التراجع عن مسار عروض الأسعار وإعادة الطلب إلى قسم اختيار المسار وتحديد الأسعار المباشرة.',
             ]);
 

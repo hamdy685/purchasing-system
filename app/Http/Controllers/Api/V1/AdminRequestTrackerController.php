@@ -386,6 +386,7 @@ class AdminRequestTrackerController extends Controller
                 'action'        => 'ADMIN_CANCELLED',
                 'from_state'    => $previousStatus,
                 'to_state'      => 'CANCELLED',
+                'user_note'      => ApprovalHistory::typedNote($request->input('reason')),
                 'comments'      => $request->input('reason'),
             ]);
 
@@ -494,6 +495,7 @@ class AdminRequestTrackerController extends Controller
                 'action'        => 'ADMIN_REOPENED',
                 'from_state'    => $fromStatus,
                 'to_state'      => $targetStatus,
+                'user_note'      => ApprovalHistory::typedNote($reason),
                 'comments'      => $reason,
             ]);
 

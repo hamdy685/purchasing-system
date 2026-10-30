@@ -118,7 +118,6 @@ class AdminControlCenterController extends Controller
                     ->when($q, function ($query, $term) {
                         $query->where(function ($sub) use ($term) {
                             $sub->where('po_number', 'like', "%{$term}%")
-                                ->orWhere('manual_po_number', 'like', "%{$term}%")
                                 ->orWhereHas('supplier', fn ($s) => $s->where('company_name', 'like', "%{$term}%")->orWhere('contact_name', 'like', "%{$term}%"))
                                 ->orWhereHas('purchaseRequest', fn ($pr) => $pr->where('request_number', 'like', "%{$term}%"));
                         });
@@ -828,7 +827,6 @@ class AdminControlCenterController extends Controller
             ->when($search, function ($q, $term) {
                 $q->where(function ($sub) use ($term) {
                     $sub->where('po_number', 'like', "%{$term}%")
-                        ->orWhere('manual_po_number', 'like', "%{$term}%")
                         ->orWhereHas('supplier', fn ($s) => $s->where('company_name', 'like', "%{$term}%"))
                         ->orWhereHas('purchaseRequest', fn ($pr) => $pr->where('request_number', 'like', "%{$term}%"));
                 });
@@ -877,7 +875,6 @@ class AdminControlCenterController extends Controller
                     'receipt_id' => $receipt?->id,
                     'pr_number' => $pr?->request_number ?? '—',
                     'po_number' => $po->po_number,
-                    'actual_po_number' => $po->manual_po_number ?: '—',
                     'receipt_number' => $receipt?->receipt_number ?: '—',
                     'department' => $pr?->department?->name ?? '—',
                     'supplier' => $po->supplier?->company_name ?? '—',

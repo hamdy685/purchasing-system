@@ -476,6 +476,7 @@ class PurchaseReceiptService
                 'action' => 'WAREHOUSE_RECEIPT_SUBMITTED',
                 'from_state' => 'PENDING_WAREHOUSE',
                 'to_state' => 'PENDING_SITE_ENGINEER',
+                'user_note' => ApprovalHistory::typedNote($notes),
                 'comments' => $notes ?: 'سجل أمين المخزن الكميات المستلمة وأرسل إذن الاستلام للمستلم/مهندس الموقع للفحص والاعتماد.',
             ]);
 
@@ -677,6 +678,7 @@ class PurchaseReceiptService
                     : ($isInternalWarehouse ? 'INTERNAL_STOCK_RECEIPT_APPROVED' : 'SITE_ENGINEER_RECEIPT_APPROVED'),
                 'from_state' => 'PENDING_SITE_ENGINEER',
                 'to_state' => 'APPROVED',
+                'user_note' => ApprovalHistory::typedNote($notes),
                 'comments' => $isOffice
                     ? ($notes ? "{$notes} — استلام المستلزمات المكتبية بمقر الشركة{$itemsSummary}، وأُحيل الملف للمشتريات لإصدار أمر الشراء الفعلي." : "اعتمد {$actorRoleLabel} استلام وفحص المستلزمات المكتبية{$itemsSummary} بمقر الشركة، وبانتظار أمر الشراء الفعلي.")
                     : ($isInternalWarehouse
@@ -869,6 +871,7 @@ class PurchaseReceiptService
                 'action' => 'OFFICE_RECEIPT_CONFIRMED',
                 'from_state' => 'ISSUED',
                 'to_state' => 'APPROVED',
+                'user_note' => ApprovalHistory::typedNote($notes),
                 'comments' => $notes ?: 'أكد مقدم الطلب استلام المستلزمات المكتبية بالكامل، وأُحيل الملف لإدارة المشتريات لإصدار أمر الشراء الفعلي.',
             ]);
 

@@ -375,7 +375,24 @@ class ReviewerPurchaseRequestTest extends TestCase
             'action' => 'APPROVED_BY_REVIEWER',
             'to_state' => 'PENDING_EXECUTIVE_APPROVAL',
             'comments' => 'Specifications and pricing verified cleanly.',
+            'user_note' => 'Specifications and pricing verified cleanly.',
         ]);
+    }
+
+    public function test_reviewer_approval_without_comment_keeps_default_text_out_of_user_note(): void
+    {
+        $token = $this->itReviewer->createToken('test_token')->plainTextToken;
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/v1/reviewer/purchase-requests/' . $this->itSubmittedPr->id . '/approve', [])
+            ->assertStatus(200);
+
+        $entry = ApprovalHistory::where('target_id', $this->itSubmittedPr->id)
+            ->where('action', 'APPROVED_BY_REVIEWER')
+            ->firstOrFail();
+
+        $this->assertSame('اعتمد المراجع الطلب وأرسله إلى المدير التنفيذي للقرار.', $entry->comments);
+        $this->assertNull($entry->user_note);
     }
 
     public function test_reviewer_approval_fails_if_no_site_engineer_is_selected_and_no_department_default(): void

@@ -230,7 +230,6 @@ export const PR_TYPE_LABELS: Record<PurchaseRequestType, { label: string; icon: 
 export interface PurchaseRequest {
   id: number;
   request_number: string;
-  manual_request_number?: string | null;
   user_id?: number | null;
   request_type?: PurchaseRequestType;
   project_name?: string | null;
@@ -371,6 +370,8 @@ export interface ApprovalHistoryEntry {
   from_state?: string | null;
   to_state?: string | null;
   comments?: string | null;
+  /** Only what the person typed for this action; null when they wrote nothing. */
+  user_note?: string | null;
   created_at?: string | null;
   actor?: { name: string } | null;
 }

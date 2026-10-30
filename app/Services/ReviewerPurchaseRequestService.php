@@ -504,6 +504,7 @@ class ReviewerPurchaseRequestService
                 'action' => $actionName,
                 'from_state' => $fromState,
                 'to_state' => $targetStatus,
+                'user_note' => ApprovalHistory::typedNote($comment),
                 'comments' => $comment ?? $defaultComment,
             ]);
 
@@ -602,6 +603,7 @@ class ReviewerPurchaseRequestService
                 'action' => 'REJECTED',
                 'from_state' => $fromState,
                 'to_state' => 'REJECTED',
+                'user_note' => ApprovalHistory::typedNote($comment),
                 'comments' => $comment,
             ]);
 

@@ -329,6 +329,7 @@ class PurchaseQuoteService
                 'action' => $action,
                 'from_state' => self::EXECUTIVE_DECISION_PENDING,
                 'to_state' => $toState,
+                'user_note' => ApprovalHistory::typedNote($comment),
                 'comments' => $comment ?? $message,
             ]);
 

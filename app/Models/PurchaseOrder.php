@@ -39,9 +39,7 @@ class PurchaseOrder extends Model
 
     protected $fillable = [
         'po_number',
-        'manual_po_number',
         'purchase_request_id',
-        'manual_pr_number',
         'selected_quote_id',
         'supplier_id',
         'created_by_user_id',

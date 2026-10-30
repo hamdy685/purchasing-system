@@ -342,7 +342,7 @@ class DocumentNamingService
         $segments[] = $metadata['item'];
 
         // 5. PO Code
-        $poCode = $po->po_number ?: ($po->manual_po_number ?: "PO-{$po->id}");
+        $poCode = $po->po_number ?: "PO-{$po->id}";
         $segments[] = self::formatDocCodeSegment($poCode, 'PO');
 
         // 6. Supplier
@@ -462,7 +462,7 @@ class DocumentNamingService
         $segments[] = $metadata['item'];
 
         // 5. PO Code
-        $poCode = $po->po_number ?: ($po->manual_po_number ?: "PO-{$po->id}");
+        $poCode = $po->po_number ?: "PO-{$po->id}";
         $segments[] = self::formatDocCodeSegment($poCode, 'PO');
 
         // 6. Supplier
@@ -515,7 +515,7 @@ class DocumentNamingService
         $segments[] = $metadata['item'];
 
         // 5. PR Code
-        $prCode = $pr->request_number ?: ($pr->pr_number ?: ($pr->manual_request_number ?: ($pr->manual_pr_number ?: "PR-{$pr->id}")));
+        $prCode = $pr->request_number ?: ($pr->pr_number ?: "PR-{$pr->id}");
         $segments[] = self::formatDocCodeSegment($prCode, 'PR');
 
         // 6. Supplier

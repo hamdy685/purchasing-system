@@ -690,6 +690,7 @@ class PurchaseRequestService
                     'action' => $actionName,
                     'from_state' => 'DRAFT',
                     'to_state' => $nextStatus,
+                    'user_note' => ApprovalHistory::typedNote($comment),
                     'comments' => $commentText,
                 ]);
             }
@@ -811,7 +812,7 @@ class PurchaseRequestService
                 'items.supplier',
                 'approvalHistory.actor',
                 'purchaseOrders' => function ($q) {
-                    $q->select('id', 'po_number', 'manual_po_number', 'purchase_request_id', 'status', 'grand_total', 'finalized_at', 'supplier_id', 'created_at', 'updated_at')
+                    $q->select('id', 'po_number', 'purchase_request_id', 'status', 'grand_total', 'finalized_at', 'supplier_id', 'created_at', 'updated_at')
                       ->with([
                           'supplier:id,company_name',
                           'receipts:id,purchase_order_id,status,receipt_number',
@@ -873,6 +874,7 @@ class PurchaseRequestService
                 'action' => 'CANCELLED',
                 'from_state' => $fromState,
                 'to_state' => 'CANCELLED',
+                'user_note' => ApprovalHistory::typedNote($reason),
                 'comments' => $commentText,
             ]);
 

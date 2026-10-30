@@ -255,7 +255,6 @@ class AdminMasterOrdersController extends Controller
             if ($search !== '') {
                 $poQuery->where(function ($q) use ($search) {
                     $q->where('po_number', 'like', "%{$search}%")
-                        ->orWhere('manual_po_number', 'like', "%{$search}%")
                         ->orWhereHas('supplier', function ($sq) use ($search) {
                             $sq->where('company_name', 'like', "%{$search}%")
                                 ->orWhere('contact_name', 'like', "%{$search}%");
@@ -334,8 +333,7 @@ class AdminMasterOrdersController extends Controller
                     'order_id' => $po->id,
                     'request_id' => $pr?->id,
                     'po_number' => $po->po_number,
-                    'manual_po_number' => $po->manual_po_number,
-                    'pr_number' => $pr?->request_number ?? $po->manual_pr_number ?? '—',
+                    'pr_number' => $pr?->request_number ?? '—',
                     'department' => [
                         'id' => $pr?->department?->id,
                         'name' => $pr?->department?->name ?? 'غير محدد',
@@ -424,7 +422,6 @@ class AdminMasterOrdersController extends Controller
                     'order_id' => null,
                     'request_id' => $pr->id,
                     'po_number' => '— (قيد الاعتماد)',
-                    'manual_po_number' => null,
                     'pr_number' => $pr->request_number,
                     'department' => [
                         'id' => $pr->department?->id,
@@ -969,6 +966,7 @@ class AdminMasterOrdersController extends Controller
                     'action' => 'ADMIN_FORCE_OVERRIDE',
                     'from_state' => $fromStatus,
                     'to_state' => $po->status,
+                    'user_note' => ApprovalHistory::typedNote($adminReason),
                     'comments' => "تعديل سيادي من مدير النظام: {$adminReason}",
                 ]);
 

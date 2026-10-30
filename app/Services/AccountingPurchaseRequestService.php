@@ -64,6 +64,7 @@ class AccountingPurchaseRequestService
                 'action' => 'ACCOUNTING_APPROVED_DIRECT',
                 'from_state' => self::PENDING_STATUS,
                 'to_state' => self::APPROVED_STATUS,
+                'user_note' => ApprovalHistory::typedNote($comment),
                 'comments' => $comment ?? 'وافقت الإدارة المالية على الطلب وأعادته إلى مدير المشتريات لإنشاء أمر الشراء.',
             ]);
 
@@ -134,6 +135,7 @@ class AccountingPurchaseRequestService
                 'action' => 'ACCOUNTING_REJECTED_DIRECT',
                 'from_state' => self::PENDING_STATUS,
                 'to_state' => 'REJECTED',
+                'user_note' => ApprovalHistory::typedNote($comment),
                 'comments' => $comment,
             ]);
 

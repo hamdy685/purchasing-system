@@ -12,9 +12,7 @@ class PurchaseOrderResource extends JsonResource
         return [
             'id' => $this->id,
             'po_number' => $this->po_number,
-            'manual_po_number' => $this->manual_po_number,
             'purchase_request_id' => $this->purchase_request_id,
-            'manual_pr_number' => $this->manual_pr_number,
             'selected_quote_id' => $this->selected_quote_id,
             'selected_quote' => $this->whenLoaded('selectedQuote', function () {
                 return $this->selectedQuote ? [

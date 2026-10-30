@@ -11,7 +11,6 @@ export interface CombinedPrintTemplateProps {
 
   // Manual / Individual Prop Overrides (optional)
   prNumber?: string;
-  manualPrNumber?: string | null;
   prDate?: string | null;
   requesterName?: string;
   reviewerName?: string;
@@ -34,7 +33,6 @@ export interface CombinedPrintTemplateProps {
   }>;
 
   poNumber?: string;
-  manualPoNumber?: string | null;
   poDate?: string | null;
   supplierName?: string;
   procurementName?: string;
@@ -118,8 +116,6 @@ export const CombinedPrintTemplate = React.forwardRef<HTMLDivElement, CombinedPr
 
     // ── 1. Section 1: Purchase Request (طلب الشراء) ───────────────────────────
     const displayPrNumber =
-      props.manualPrNumber ||
-      resolvedPr?.manual_request_number ||
       props.prNumber ||
       resolvedPr?.request_number ||
       '---';
@@ -234,11 +230,6 @@ export const CombinedPrintTemplate = React.forwardRef<HTMLDivElement, CombinedPr
       props.poNumber ||
       po?.po_number ||
       '---';
-
-    const manualPoNumber =
-      props.manualPoNumber ||
-      po?.manual_po_number ||
-      null;
 
     const poDate = formatDate(props.poDate || po?.finalized_at || po?.created_at);
 
@@ -515,11 +506,6 @@ export const CombinedPrintTemplate = React.forwardRef<HTMLDivElement, CombinedPr
             <div className="text-center">
               <h2 className="text-base sm:text-lg font-bold text-black tracking-wide">
                 أمر شراء فعلي رقم: <span className="font-mono text-gray-900">{displayPoNumber}</span>
-                {manualPoNumber && (
-                  <span className="text-xs font-mono text-gray-500 mr-1.5 font-normal">
-                    (يدوي: {manualPoNumber})
-                  </span>
-                )}
               </h2>
               <div className="text-[10px] sm:text-xs font-semibold text-gray-700 mt-1 flex items-center justify-center gap-1.5 flex-wrap">
                 <span>المشروع: <strong className="text-gray-900">{displayProject}</strong></span>

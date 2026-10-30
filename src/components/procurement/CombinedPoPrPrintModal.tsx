@@ -20,7 +20,6 @@ export interface CombinedPrintData {
   // PR Context
   prId?: number;
   prNumber: string;
-  manualPrNumber?: string | null;
   prDate?: string | null;
   requesterName?: string;
   departmentName?: string;
@@ -38,7 +37,6 @@ export interface CombinedPrintData {
 
   // PO Context
   poNumber: string;
-  manualPoNumber?: string | null;
   poDate?: string | null;
   supplierName: string;
   supplierPhone?: string;
@@ -102,8 +100,8 @@ export const CombinedPoPrPrintModal: React.FC<CombinedPoPrPrintModalProps> = ({
     const textLines = [
       '🏢 *شركة إشبيلية للتطوير العقاري والمقاولات*',
       '📄 *أمر وطلب شراء معتمد*',
-      `📝 *طلب الشراء:* ${data.manualPrNumber ? `${data.prNumber} (${data.manualPrNumber})` : data.prNumber}`,
-      `📑 *أمر الشراء:* ${data.manualPoNumber ? `${data.poNumber} (${data.manualPoNumber})` : data.poNumber}`,
+      `📝 *طلب الشراء:* ${data.prNumber}`,
+      `📑 *أمر الشراء:* ${data.poNumber}`,
       `🏬 *المورد:* ${data.supplierName || '—'}`,
       `📍 *المشروع / القطعة:* ${data.projectOrParcel || '—'} ${data.region ? `(${data.region})` : ''}`,
       `💰 *الإجمالي:* ${formatCleanNumber(data.grandTotal)} ج.م`,
@@ -115,8 +113,8 @@ export const CombinedPoPrPrintModal: React.FC<CombinedPoPrPrintModalProps> = ({
   const items = data.items || [];
   const poDateFormatted = formatDate(data.poDate);
   const prDateFormatted = formatDate(data.prDate);
-  const requestNumber = data.manualPrNumber ? `${data.prNumber} (${data.manualPrNumber})` : data.prNumber;
-  const orderNumber = data.manualPoNumber ? `${data.poNumber} (${data.manualPoNumber})` : data.poNumber;
+  const requestNumber = data.prNumber;
+  const orderNumber = data.poNumber;
   const displayProject = data.projectName?.trim() || 'غير مسجل';
   const displayRegion = data.region?.trim() || 'غير مسجلة';
   const displayParcel = (data.parcelReference || data.projectOrParcel)?.trim() || 'غير مسجل';
@@ -230,7 +228,6 @@ export const CombinedPoPrPrintModal: React.FC<CombinedPoPrPrintModalProps> = ({
             {viewMode === 'SINGLE_PAGE_COMBINED' && (
               <CombinedPrintTemplate
                 prNumber={data.prNumber}
-                manualPrNumber={data.manualPrNumber}
                 prDate={data.prDate}
                 departmentName={data.departmentName}
                 projectName={data.projectName}
@@ -243,7 +240,6 @@ export const CombinedPoPrPrintModal: React.FC<CombinedPoPrPrintModalProps> = ({
                 procurementReviewerName={data.procurementReviewerName || 'م. أحمد بدوي'}
                 accountantName={data.accountantName || 'أ. حسن'}
                 poNumber={data.poNumber}
-                manualPoNumber={data.manualPoNumber}
                 poDate={data.poDate}
                 supplierName={data.supplierName}
                 deliveryDate={data.deliveryDate}

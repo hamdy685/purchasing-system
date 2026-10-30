@@ -56,7 +56,7 @@ class DepartmentPoConsolidationService
                 $pr = PurchaseRequest::with(['items', 'selectedQuote', 'department', 'targetDepartment'])->findOrFail($pr->id);
                 $groups = $this->planGroups($pr, $data);
                 $runId = (string) Str::uuid();
-                $header = $this->headerOptions($data, count($groups));
+                $header = $this->headerOptions($data);
 
                 $orders = collect();
                 foreach (array_values($groups) as $index => $group) {
@@ -501,14 +501,11 @@ class DepartmentPoConsolidationService
         );
     }
 
-    private function headerOptions(array $data, int $orderCount): array
+    private function headerOptions(array $data): array
     {
         $firstGroup = is_array($data['groups'] ?? null) ? (array) (array_values($data['groups'])[0] ?? []) : [];
 
         return [
-            // One manual PO number cannot name several orders.
-            'manual_po_number' => $orderCount === 1 ? ($data['manual_po_number'] ?? $firstGroup['manual_po_number'] ?? null) : null,
-            'manual_pr_number' => $data['manual_pr_number'] ?? null,
             'payment_terms' => $data['payment_terms'] ?? $firstGroup['payment_terms'] ?? null,
             'delivery_terms' => $data['delivery_terms'] ?? null,
             'delivery_date' => $data['delivery_date'] ?? $firstGroup['delivery_date'] ?? null,

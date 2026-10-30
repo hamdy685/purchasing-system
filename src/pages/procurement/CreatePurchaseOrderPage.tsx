@@ -67,8 +67,6 @@ export const CreatePurchaseOrderPage: React.FC = () => {
   const [deliveryDate, setDeliveryDate] = useState<string>(getLocalDateIso());
   const [budgetCode, setBudgetCode] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
-  const [manualPrNumber, setManualPrNumber] = useState<string>('');
-  const [manualPoNumber, setManualPoNumber] = useState<string>('');
   const [showCombinedPrintModal, setShowCombinedPrintModal] = useState<boolean>(false);
   const [poItems, setPoItems] = useState<PoItemInput[]>([]);
   const [orderMode, setOrderMode] = useState<'SEPARATE_DEFAULT' | 'COMBINED_SINGLE'>('SEPARATE_DEFAULT');
@@ -105,9 +103,6 @@ export const CreatePurchaseOrderPage: React.FC = () => {
         if (prId) {
           const prData = await getApprovedPurchaseRequestApi(prId);
           setPr(prData);
-          if (prData?.manual_request_number) {
-            setManualPrNumber(prData.manual_request_number);
-          }
           if (quoteId && prData?.selected_quote?.id && quoteId !== prData.selected_quote.id) {
             throw new Error('العرض المختار في الرابط لا يطابق العرض المعتمد لهذا الطلب.');
           }
@@ -718,8 +713,6 @@ export const CreatePurchaseOrderPage: React.FC = () => {
           delivery_date: deliveryDate || undefined,
           budget_code: budgetCode || undefined,
           notes: notes || undefined,
-          manual_po_number: manualPoNumber.trim() || undefined,
-          manual_pr_number: manualPrNumber.trim() || undefined,
           groups: buildGroupsPayload(finalGroups, finalSupplierId),
           idempotency_key: issueKeyRef.current,
         });
@@ -746,8 +739,6 @@ export const CreatePurchaseOrderPage: React.FC = () => {
           delivery_date: deliveryDate || undefined,
           budget_code: budgetCode || undefined,
           notes: notes || undefined,
-          manual_po_number: manualPoNumber.trim() || undefined,
-          manual_pr_number: manualPrNumber.trim() || undefined,
           items: finalGroups[0].items.map((item) => ({
             pr_item_id: item.pr_item_id,
             item_id: item.item_id,
@@ -805,7 +796,6 @@ export const CreatePurchaseOrderPage: React.FC = () => {
     return {
       prId: pr?.id,
       prNumber: pr?.request_number || '—',
-      manualPrNumber: manualPrNumber.trim() || pr?.manual_request_number || null,
       prDate: pr?.created_at || null,
       requesterName: pr?.requester?.name || 'م. كامل',
       reviewerName: pr?.assigned_reviewer?.name || (pr?.department as any)?.manager?.name || 'م. كريم',
@@ -818,8 +808,7 @@ export const CreatePurchaseOrderPage: React.FC = () => {
       dateNeeded: pr?.date_needed || '—',
       prNotes: pr?.notes || pr?.justification || '',
 
-      poNumber: manualPoNumber.trim() || (pr ? `PO-PREVIEW-${pr.request_number}` : 'PO-PREVIEW'),
-      manualPoNumber: manualPoNumber.trim() || null,
+      poNumber: pr ? `PO-PREVIEW-${pr.request_number}` : 'PO-PREVIEW',
       poDate: getLocalDateIso(),
       supplierName: supplierDisplayName,
       supplierPhone: selectedSupplier?.phone || undefined,
@@ -840,7 +829,7 @@ export const CreatePurchaseOrderPage: React.FC = () => {
       })),
       grandTotal: calculateGrandTotal(),
     };
-  }, [pr, manualPrNumber, manualPoNumber, supplierDisplayName, selectedSupplier, paymentTerms, deliveryDate, notes, poItems]);
+  }, [pr, supplierDisplayName, selectedSupplier, paymentTerms, deliveryDate, notes, poItems]);
 
   const handleDirectWhatsAppShare = () => {
     const totalAmount = calculateGrandTotal();
@@ -848,8 +837,8 @@ export const CreatePurchaseOrderPage: React.FC = () => {
       '🏢 *شركة إشبيلية للتطوير العقاري والمقاولات*',
       '📄 *بيانات أمر الشراء وطلب الشراء المعتمد*',
       '─────────────────────────',
-      `📝 *طلب الشراء:* ${pr?.request_number || '—'} ${manualPrNumber ? `(يدوي: ${manualPrNumber})` : ''}`,
-      `📑 *أمر الشراء:* ${manualPoNumber ? `(يدوي: ${manualPoNumber})` : 'قيد الإصدار'}`,
+      `📝 *طلب الشراء:* ${pr?.request_number || '—'}`,
+      `📑 *أمر الشراء:* قيد الإصدار`,
       `🏬 *المورد:* ${supplierDisplayName}`,
       `📍 *المشروع / القطعة:* ${poItems[0]?.item_reference || '—'} ${poItems[0]?.region ? `(${poItems[0]?.region})` : ''}`,
       `💰 *إجمالي أمر الشراء:* ${formatCleanNumber(totalAmount)} ج.م`,
@@ -1139,41 +1128,6 @@ export const CreatePurchaseOrderPage: React.FC = () => {
               />
             </div>
           </div>
-
-          {/* Document Reference Numbers (Manual PR / PO) */}
-          <details className="group rounded-xl border border-slate-800 bg-slate-900/60">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-xs font-bold text-slate-300 hover:text-slate-100 [&::-webkit-details-marker]:hidden">
-              <span>أرقام ورقية <span className="font-normal text-slate-500">(اختياري)</span></span>
-              <span aria-hidden="true" className="text-slate-500 transition-transform group-open:rotate-180">⌄</span>
-            </summary>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-800 p-4">
-              <p className="md:col-span-2 text-[11px] text-slate-500">لو سبتها فاضية، النظام هيرقّم تلقائياً.</p>
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  رقم طلب الشراء الورقي
-                </label>
-                <input
-                  type="text"
-                  value={manualPrNumber}
-                  onChange={(e) => setManualPrNumber(e.target.value)}
-                  placeholder="مثال: PR-MAN-2026/01"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2.5 text-xs text-slate-100 placeholder:text-slate-500 font-mono focus:outline-none focus:border-cyan-500 min-h-10"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  رقم أمر الشراء الورقي
-                </label>
-                <input
-                  type="text"
-                  value={manualPoNumber}
-                  onChange={(e) => setManualPoNumber(e.target.value)}
-                  placeholder="مثال: PO-MAN-2026/01"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2.5 text-xs text-slate-100 placeholder:text-slate-500 font-mono focus:outline-none focus:border-cyan-500 min-h-10"
-                />
-              </div>
-            </div>
-          </details>
 
           {/* Multi-supplier Direct Purchase Helper Banner */}
           {hasMultipleDirectSuppliers && pr && (

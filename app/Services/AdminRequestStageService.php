@@ -478,6 +478,7 @@ class AdminRequestStageService
             'action' => 'ADMIN_STAGE_MOVE',
             'from_state' => $fromStatus,
             'to_state' => $toStatus,
+            'user_note' => ApprovalHistory::typedNote($reason),
             'comments' => "نقل إداري إلى مرحلة «{$toLabel}»: {$reason}",
         ]);
     }

@@ -18,7 +18,6 @@ interface ColumnDef {
 const ALL_COLUMNS: ColumnDef[] = [
   { key: 'pr_number', label: 'رقم طلب الشراء PR', defaultVisible: true },
   { key: 'po_number', label: 'رقم أمر الشراء PO', defaultVisible: true },
-  { key: 'actual_po_number', label: 'أمر الشراء الفعلي', defaultVisible: true },
   { key: 'receipt_number', label: 'رقم إذن الاستلام REC', defaultVisible: true },
   { key: 'department', label: 'القسم / الإدارة', defaultVisible: true },
   { key: 'supplier', label: 'المورد', defaultVisible: true },
@@ -111,7 +110,6 @@ export const AdminExcelGrid: React.FC = () => {
       return (
         row.pr_number?.toLowerCase().includes(term) ||
         row.po_number?.toLowerCase().includes(term) ||
-        row.actual_po_number?.toLowerCase().includes(term) ||
         row.receipt_number?.toLowerCase().includes(term) ||
         row.supplier?.toLowerCase().includes(term) ||
         row.item_name?.toLowerCase().includes(term) ||
