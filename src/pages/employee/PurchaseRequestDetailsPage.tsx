@@ -46,7 +46,9 @@ export const PurchaseRequestDetailsPage: React.FC = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { hasPermission, hasRole, user } = useAuth();
-  const isReviewer = hasRole('reviewer');
+  // Procurement and the financial manager skip the reviewer, so they choose the receiver and warehouse route like one.
+  const isReviewer = !hasRole('general_manager') && !hasRole('execution_manager')
+    && (hasRole('reviewer') || hasRole('procurement_manager') || hasRole('accountant'));
 
   const [requestData, setRequestData] = useState<PurchaseRequest | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -584,7 +586,7 @@ export const PurchaseRequestDetailsPage: React.FC = () => {
           requestNumber={requestData.request_number}
           title="اعتماد طلب الشراء وتحديد مسؤول الاستلام ومسار المخزن"
           subtitle={`طلب رقم ${requestData.request_number} — سيتم الاعتماد والإرسال مباشرةً إلى المدير التنفيذي`}
-          promptText="بصفتك مراجعاً للقسم، حدد المسؤول عن فحص واستلام المواد (مهندس الموقع أو أمين المخزن أو استلام المواد بنفسك) وما إذا كان الطلب سيمر على عم سلامة في المخزن:"
+          promptText="حدد المسؤول عن فحص واستلام المواد (مهندس الموقع أو أمين المخزن أو استلام المواد بنفسك) وما إذا كان الطلب سيمر على عم سلامة في المخزن:"
           confirmButtonText="اعتماد وإرسال إلى المدير التنفيذي 🚀"
           initialSiteEngineerId={requestData.site_engineer_user_id || user?.id || null}
           initialRequiresWarehouseReceipt={requestData.requires_warehouse_receipt ?? true}

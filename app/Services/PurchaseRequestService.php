@@ -602,6 +602,8 @@ class PurchaseRequestService
             $isTargetDeptManager = (int) $request->targetDepartment?->manager_user_id === (int) $user->id;
             $sameDepartment = (int) $request->department_id === (int) $request->target_department_id || (int) $user->department_id === (int) $request->target_department_id;
             $canSkipReviewer = $isDepartmentManagerRequester && ($sameDepartment || $isTargetDeptManager || ! $request->department_id);
+            // المشتريات والمدير المالي يتخطيان المراجع، فيأخذان قراره: تحديد مسؤول الاستلام ومسار المخزن.
+            $actsAsReviewer = ! $isExecutiveRequester && ($canSkipReviewer || $isProcurementOrAccounting);
             $isComplementary = $request->isComplementaryRequest();
 
             if ($isComplementary) {
@@ -627,7 +629,7 @@ class PurchaseRequestService
             }
 
             // إذا كان مقدم الطلب هو المدير التنفيذي أو مراجع القسم لنفس قسمه لطلب مشروعات/موقع، يجب تحديد مسؤول الاستلام
-            $requiresReceiverSelection = ($isExecutiveRequester || ($canSkipReviewer && in_array($nextStatus, ['PENDING_EXECUTIVE_APPROVAL', 'PENDING_PROCUREMENT_APPROVAL'], true)))
+            $requiresReceiverSelection = ($isExecutiveRequester || ($actsAsReviewer && in_array($nextStatus, ['PENDING_EXECUTIVE_APPROVAL', 'PENDING_PROCUREMENT_APPROVAL'], true)))
                 && $request->request_type !== 'OFFICE_SUPPLIES';
 
             if ($requiresReceiverSelection) {
@@ -677,11 +679,12 @@ class PurchaseRequestService
 
             $request->update($updateData);
 
-            if ($canSkipReviewer && in_array($nextStatus, ['PENDING_EXECUTIVE_APPROVAL', 'PENDING_PROCUREMENT_APPROVAL'], true)) {
+            if ($actsAsReviewer && in_array($nextStatus, ['PENDING_EXECUTIVE_APPROVAL', 'PENDING_PROCUREMENT_APPROVAL'], true)) {
                 $actionName = $nextStatus === 'PENDING_PROCUREMENT_APPROVAL' ? 'APPROVED_BY_REVIEWER_FAST_TRACK' : 'APPROVED_BY_REVIEWER';
+                $actorLabel = $canSkipReviewer ? 'مراجع القسم' : ($user->hasRole('procurement_manager') ? 'مدير المشتريات' : 'المدير المالي');
                 $commentText = $comment ?: ($nextStatus === 'PENDING_PROCUREMENT_APPROVAL'
-                    ? 'أنشأ واعتمد مراجع القسم طلب الكمالة المستقل وأرسله مباشرةً إلى إدارة المشتريات (مسار سريع دون تنفيذي أو مالية).'
-                    : 'أنشأ واعتمد مراجع القسم الطلب وحدد مسؤول الاستلام ومسار المخزن وأرسله إلى المدير التنفيذي.');
+                    ? "أنشأ واعتمد {$actorLabel} طلب الكمالة المستقل وأرسله مباشرةً إلى إدارة المشتريات (مسار سريع دون تنفيذي أو مالية)."
+                    : "أنشأ واعتمد {$actorLabel} الطلب وحدد مسؤول الاستلام ومسار المخزن وأرسله إلى المدير التنفيذي.");
 
                 ApprovalHistory::create([
                     'target_type' => PurchaseRequest::class,
