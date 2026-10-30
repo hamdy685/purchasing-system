@@ -800,6 +800,28 @@ export const ActionRequiredInbox: React.FC<ActionRequiredInboxProps> = ({
                 ? formatDateTime24h(item.created_at)
                 : (item.timeAgo && /^\d{4}-\d{2}-\d{2}/.test(item.timeAgo) ? formatDateTime24h(item.timeAgo) : (item.timeAgo || null));
 
+              // Overdue is shown once, in the header badge (days past the need date).
+              const todayIso = new Date().toISOString().slice(0, 10);
+              const isOverdue = Boolean(item.date_needed && item.date_needed < todayIso);
+              const overdueDays = isOverdue
+                ? Math.max(1, Math.round((Date.parse(todayIso) - Date.parse(String(item.date_needed).slice(0, 10))) / 86400000))
+                : 0;
+
+              const isComplementary = Boolean(
+                item.request_type === 'COMPLEMENTARY' ||
+                item.type === 'SUPPLEMENT' ||
+                item.title?.includes('كمالة') ||
+                item.stageBadge?.text?.includes('كمالة')
+              );
+              const nextActor = item.next_actor || (
+                isComplementary ? 'مدير المشتريات (تنفيذ فوري مباشر دون مالية أو تنفيذي)' :
+                item.type === 'PR' ? (isReviewer ? 'المدير العام للاعتماد النهائي' : 'إدارة المشتريات') :
+                item.type === 'SUPPLEMENT' ? 'إدارة المشتريات للتسعير وإصدار أمر التوريد' :
+                item.type === 'QUOTE' ? 'المدير العام لاعتماد الترسية' :
+                item.type === 'PO' ? 'المستودع والموقع للاستلام' :
+                item.type === 'RECEIPT' ? 'إدارة الحسابات لتسجيل الفاتورة' : undefined
+              );
+
               return (
                 <CardErrorBoundary key={`${item.type || 'TASK'}-${item.id || item.rawId || Math.random()}`} fallbackCode={item.code}>
                   <div
@@ -827,8 +849,8 @@ export const ActionRequiredInbox: React.FC<ActionRequiredInboxProps> = ({
                 >
                   <div className="space-y-3">
                     {/* Top Row: Code, Location Badge & Date */}
-                    <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
-                      <div className="flex items-center gap-1.5 flex-wrap">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                         <span className="font-mono text-xs font-black text-cyan-300 bg-cyan-950/90 border border-cyan-700/60 px-2 py-0.5 rounded-lg">
                           {item.code}
                         </span>
@@ -884,7 +906,14 @@ export const ActionRequiredInbox: React.FC<ActionRequiredInboxProps> = ({
                           </span>
                         )}
 
-                        {isUrgent && (
+                        {isOverdue ? (
+                          <span
+                            className="text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded-lg animate-pulse"
+                            title={`تاريخ الاحتياج ${item.date_needed}`}
+                          >
+                            ⏳ متأخر {overdueDays === 1 ? 'يوم' : `${overdueDays} أيام`}
+                          </span>
+                        ) : isUrgent && (
                           <span className="text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded-lg animate-pulse">
                             🔥 عاجل
                           </span>
@@ -979,7 +1008,8 @@ export const ActionRequiredInbox: React.FC<ActionRequiredInboxProps> = ({
                                     </span>
                                   )}
 
-                                  {it.parcel && (
+                                  {/* The card header already names the parcel; repeat it per line only when lines differ */}
+                                  {it.parcel && !isOffice && uniqueParcels.length > 1 && (
                                     <span className="text-slate-400 text-[10px] bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded">
                                       قطعة: {it.parcel}
                                     </span>
@@ -1031,15 +1061,6 @@ export const ActionRequiredInbox: React.FC<ActionRequiredInboxProps> = ({
                         </div>
                       )}
 
-                      {itemDateDisplay && (
-                        <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                          <span className="text-slate-500 font-sans">
-                            🕒 {item.type === 'RECEIPT' ? 'تاريخ ووقت الاستلام:' : 'تاريخ ووقت الطلب:'}
-                          </span>
-                          <strong className="text-cyan-300 font-bold tracking-tight" dir="ltr">{itemDateDisplay}</strong>
-                        </div>
-                      )}
-
                       {item.date_needed && (
                         <div className="flex items-center gap-1.5 font-mono text-[11px]">
                           <span className="text-slate-500 font-sans">📅 الاحتياج:</span>
@@ -1062,52 +1083,23 @@ export const ActionRequiredInbox: React.FC<ActionRequiredInboxProps> = ({
                       )}
                     </div>
 
-                    {/* Operational Reason */}
-                    {item.reason && (
-                      <div className="flex items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-950/20 px-3 py-2 text-xs font-medium text-amber-200">
-                        <span className="font-bold text-amber-400 shrink-0">⚡ المطلوب:</span>
-                        <span className="truncate">{item.reason}</span>
+                    {/* What is required now, and who acts next — one box, full text (no truncation) */}
+                    {(item.reason || nextActor) && (
+                      <div className="rounded-xl border border-amber-500/25 bg-amber-950/20 px-3 py-2 space-y-1 text-xs">
+                        {item.reason && (
+                          <p className="font-medium text-amber-200 leading-relaxed">
+                            <span className="font-bold text-amber-400">⚡ المطلوب: </span>
+                            {item.reason}
+                          </p>
+                        )}
+                        {nextActor && (
+                          <p className="text-[11px] text-cyan-300">
+                            <span className="text-slate-500">⏭️ المسؤول التالي: </span>
+                            <strong className="font-bold">{nextActor}</strong>
+                          </p>
+                        )}
                       </div>
                     )}
-
-                    {/* Next Actor & Overdue Status Bar */}
-                    {(() => {
-                      const isOverdue = Boolean(item.date_needed && item.date_needed < new Date().toISOString().slice(0, 10));
-                      const isComplementary = Boolean(
-                        item.request_type === 'COMPLEMENTARY' ||
-                        item.type === 'SUPPLEMENT' ||
-                        item.title?.includes('كمالة') ||
-                        item.stageBadge?.text?.includes('كمالة')
-                      );
-
-                      const defaultNextActor = item.next_actor || (
-                        isComplementary ? 'مدير المشتريات (تنفيذ فوري مباشر دون مالية أو تنفيذي)' :
-                        item.type === 'PR' ? (isReviewer ? 'المدير العام للاعتماد النهائي' : 'إدارة المشتريات') :
-                        item.type === 'SUPPLEMENT' ? 'إدارة المشتريات للتسعير وإصدار أمر التوريد' :
-                        item.type === 'QUOTE' ? 'المدير العام لاعتماد الترسية' :
-                        item.type === 'PO' ? 'المستودع والموقع للاستلام' :
-                        item.type === 'RECEIPT' ? 'إدارة الحسابات لتسجيل الفاتورة' : undefined
-                      );
-
-                      if (!defaultNextActor && !isOverdue) return null;
-
-                      return (
-                        <div className="flex items-center justify-between gap-2 text-[11px] pt-1.5 border-t border-slate-800/60 flex-wrap">
-                          {defaultNextActor && (
-                            <span className="text-cyan-300 font-medium flex items-center gap-1">
-                              <span className="text-slate-500 font-normal">⏭️ المسؤول التالي:</span>
-                              <strong className="text-cyan-300 font-bold">{defaultNextActor}</strong>
-                            </span>
-                          )}
-                          {isOverdue && (
-                            <span className="text-rose-300 font-bold bg-rose-950/70 border border-rose-800/70 px-2 py-0.5 rounded-lg flex items-center gap-1 shrink-0 animate-pulse text-[10px]">
-                              <span>⏳</span>
-                              <span>متأخر عن تاريخ الاحتياج</span>
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })()}
                   </div>
 
                   {/* Actions Toolbar on the Card */}
