@@ -106,6 +106,8 @@ export const PurchasesReportView: React.FC = () => {
   // Phones: line cards by default (the 14-column sheet is ~1750px wide); filters folded into one line.
   const [mobileView, setMobileView] = useState<'cards' | 'sheet'>('cards');
   const [showMobileFilters, setShowMobileFilters] = useState<boolean>(false);
+  const mobileCardsTopRef = React.useRef<HTMLDivElement>(null);
+  const scrollToCardsAfterLoad = React.useRef(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -840,6 +842,35 @@ export const PurchasesReportView: React.FC = () => {
     );
   };
 
+  // Phone totals cover the whole period (server metrics), not just the loaded page; column filters are
+  // client-side, so while one is active the totals fall back to the visible rows.
+  const mobileTotals = data?.metrics && !hasActiveColFilters
+    ? {
+        amount: Number(data.metrics.total_amount || 0),
+        orders: data.metrics.total_orders_count,
+        suppliers: data.metrics.suppliers_count,
+        items: data.metrics.total_items_count,
+      }
+    : { amount: liveTotals.totalAmount, orders: liveTotals.uniqueOrders, suppliers: liveTotals.uniqueSuppliers, items: filteredRows.length };
+  const lastPage = data?.pagination?.last_page || 1;
+  const mobilePageNumbers: (number | '…')[] = lastPage <= 7
+    ? Array.from({ length: lastPage }, (_, i) => i + 1)
+    : [1, ...(currentPage > 3 ? ['…' as const] : []),
+        ...[currentPage - 1, currentPage, currentPage + 1].filter((n) => n > 1 && n < lastPage),
+        ...(currentPage < lastPage - 2 ? ['…' as const] : []), lastPage];
+  const goToMobilePage = (page: number) => {
+    scrollToCardsAfterLoad.current = true;
+    setCurrentPage(Math.min(Math.max(1, page), lastPage));
+  };
+
+  // Land on the first card of the new page once its rows have arrived (scrolling earlier lands mid-list).
+  useEffect(() => {
+    if (scrollToCardsAfterLoad.current && !refreshing) {
+      scrollToCardsAfterLoad.current = false;
+      mobileCardsTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [data, refreshing]);
+
   const mobilePeriodLabel = filterType === 'monthly'
     ? selectedMonth
     : (filterType === 'daily' ? selectedDate : `${fromDate} ← ${toDate}`);
@@ -1161,16 +1192,23 @@ export const PurchasesReportView: React.FC = () => {
           <div className="md:hidden p-3 space-y-2.5 bg-slate-950/70 border-b border-slate-800">
             <div className="grid grid-cols-2 gap-2">
               <div className="col-span-2 rounded-xl border border-emerald-700/60 bg-emerald-950/40 px-3 py-2">
-                <span className="block text-[11px] font-bold text-emerald-300/80">إجمالي القيمة</span>
-                <strong className="block text-lg font-black text-emerald-300" dir="ltr">{formatCleanNumber(liveTotals.totalAmount)} ج.م</strong>
+                <span className="block text-[11px] font-bold text-emerald-300/80">
+                  إجمالي القيمة {hasActiveColFilters ? '(حسب الفلاتر)' : `(${mobileTotals.items} بند)`}
+                </span>
+                <strong className="block text-lg font-black text-emerald-300" dir="ltr">{formatCleanNumber(mobileTotals.amount)} ج.م</strong>
+                {lastPage > 1 && (
+                  <span className="block text-[11px] text-emerald-200/70">
+                    إجمالي هذه الصفحة: <span dir="ltr">{formatCleanNumber(liveTotals.totalAmount)}</span> ج.م
+                  </span>
+                )}
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
                 <span className="block text-[11px] font-bold text-slate-400">أوامر الشراء</span>
-                <strong className="text-base font-black text-slate-100">{liveTotals.uniqueOrders}</strong>
+                <strong className="text-base font-black text-slate-100">{mobileTotals.orders}</strong>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
                 <span className="block text-[11px] font-bold text-slate-400">الموردين</span>
-                <strong className="text-base font-black text-slate-100">{liveTotals.uniqueSuppliers}</strong>
+                <strong className="text-base font-black text-slate-100">{mobileTotals.suppliers}</strong>
               </div>
             </div>
 
@@ -1380,7 +1418,7 @@ export const PurchasesReportView: React.FC = () => {
 
         {/* ── PHONE LINE CARDS: every column of the sheet stacked, so nothing needs sideways scrolling ── */}
         {mobileView === 'cards' && (
-          <div className="md:hidden space-y-2.5">
+          <div ref={mobileCardsTopRef} className="md:hidden space-y-2.5 scroll-mt-4">
             {loading ? (
               <div className="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center text-xs font-bold text-slate-400">
                 جاري تحميل بيانات التقرير...
@@ -1420,7 +1458,7 @@ export const PurchasesReportView: React.FC = () => {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="flex items-center gap-1.5 min-w-0">
-                          <span className="font-mono text-[11px] text-slate-500">{idx + 1}.</span>
+                          <span className="font-mono text-[11px] text-slate-500">{(data?.pagination?.from || 1) + idx}.</span>
                           <span className={`inline-block px-2 py-0.5 rounded text-xs font-black font-mono ${palette.poTag}`}>
                             {row.po_number_short || row.po_number}
                           </span>
@@ -1495,9 +1533,76 @@ export const PurchasesReportView: React.FC = () => {
                 })}
 
                 <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/40 px-3 py-2.5 flex items-center justify-between gap-2 text-xs font-bold text-emerald-200">
-                  <span>الإجمالي ({filteredRows.length} بند)</span>
+                  <span>{lastPage > 1 ? 'إجمالي هذه الصفحة' : 'الإجمالي'} ({filteredRows.length} بند)</span>
                   <span className="font-mono font-black text-sm text-emerald-300" dir="ltr">{formatCleanNumber(liveTotals.totalAmount)} ج.م</span>
                 </div>
+
+                {data?.pagination && lastPage > 1 && (
+                  <nav aria-label="صفحات التقرير" className="rounded-xl border border-slate-700 bg-slate-900 p-3 space-y-2.5 text-xs">
+                    <p className="text-center font-bold text-slate-300">
+                      صفحة {data.pagination.current_page} من {lastPage}
+                      <span className="block text-[11px] font-normal text-slate-400">
+                        البنود {data.pagination.from}–{data.pagination.to} من {data.pagination.total}
+                      </span>
+                    </p>
+
+                    <div className="flex flex-wrap items-center justify-center gap-1.5">
+                      {mobilePageNumbers.map((page, i) => page === '…' ? (
+                        <span key={`gap-${i}`} className="px-1 text-slate-500">…</span>
+                      ) : (
+                        <button
+                          key={page}
+                          type="button"
+                          disabled={refreshing}
+                          onClick={() => goToMobilePage(page)}
+                          aria-current={page === currentPage ? 'page' : undefined}
+                          className={`min-w-[2.5rem] rounded-lg border px-2 font-mono font-black transition ${
+                            page === currentPage
+                              ? 'border-emerald-500 bg-emerald-600 text-white'
+                              : 'border-slate-700 bg-slate-950 text-slate-300'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        disabled={currentPage <= 1 || refreshing}
+                        onClick={() => goToMobilePage(currentPage - 1)}
+                        className="rounded-lg border border-slate-700 bg-slate-950 font-bold text-slate-200 disabled:opacity-40"
+                      >
+                        → السابق
+                      </button>
+                      <button
+                        type="button"
+                        disabled={currentPage >= lastPage || refreshing}
+                        onClick={() => goToMobilePage(currentPage + 1)}
+                        className="rounded-lg border border-emerald-600 bg-emerald-600 font-bold text-white disabled:opacity-40"
+                      >
+                        التالي ←
+                      </button>
+                    </div>
+
+                    <label className="flex items-center justify-center gap-2 text-slate-400">
+                      <span>عدد البنود بالصفحة:</span>
+                      <select
+                        value={pageSize}
+                        onChange={(e) => {
+                          setPageSize(Number(e.target.value));
+                          goToMobilePage(1);
+                        }}
+                        className="rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs font-bold text-slate-200"
+                      >
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </label>
+                  </nav>
+                )}
               </>
             )}
           </div>
