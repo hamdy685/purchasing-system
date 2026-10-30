@@ -14,6 +14,7 @@ vi.mock('../context/AuthContext', () => ({
 vi.mock('../api/generalManager', () => ({
   getGeneralManagerPurchaseRequestsApi: vi.fn(),
   getGeneralManagerPurchaseOrdersApi: vi.fn(),
+  getGeneralManagerPurchaseOrderSummariesApi: vi.fn(),
   approveGeneralManagerPurchaseRequestApi: vi.fn(),
   rejectGeneralManagerPurchaseRequestApi: vi.fn(),
 }));
@@ -49,6 +50,7 @@ describe('GeneralManagerDashboardPage Executive Decisions Logic', () => {
     vi.clearAllMocks();
     (useAuth as any).mockReturnValue(mockGmAuth);
     vi.mocked(gmApi.getGeneralManagerPurchaseOrdersApi).mockResolvedValue([]);
+    vi.mocked(gmApi.getGeneralManagerPurchaseOrderSummariesApi).mockResolvedValue([]);
   });
 
   it('renders initial approval, final approval, and quote awarding items with accurate badges, next actors, and action buttons', async () => {

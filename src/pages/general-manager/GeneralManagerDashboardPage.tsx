@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
-  getGeneralManagerPurchaseOrdersApi,
+  getGeneralManagerPurchaseOrderSummariesApi,
   getGeneralManagerPurchaseRequestsApi,
   approveGeneralManagerPurchaseRequestApi,
   rejectGeneralManagerPurchaseRequestApi,
@@ -37,7 +37,7 @@ export const GeneralManagerDashboardPage: React.FC = () => {
     if (!silent) setLoading(true);
     try {
       const [posData, reqsData, quotesData] = await Promise.all([
-        getGeneralManagerPurchaseOrdersApi().catch(() => []),
+        getGeneralManagerPurchaseOrderSummariesApi().catch(() => []),
         getGeneralManagerPurchaseRequestsApi().catch(() => []),
         getPendingQuoteRequestsApi().catch(() => []),
       ]);
@@ -177,11 +177,14 @@ export const GeneralManagerDashboardPage: React.FC = () => {
         })),
         onDirectApprove: async (_item: any, comment?: string) => {
           await approveGeneralManagerPurchaseRequestApi(req.id, comment);
-          await loadData(true);
+          // The decided request leaves the inbox at once; the rest refreshes in the background.
+          setRequests((prev) => prev.filter((r) => r.id !== req.id));
+          void loadData(true);
         },
         onDirectReject: async (_item: any, reason: string) => {
           await rejectGeneralManagerPurchaseRequestApi(req.id, reason);
-          await loadData(true);
+          setRequests((prev) => prev.filter((r) => r.id !== req.id));
+          void loadData(true);
         },
 
         // أزرار اتخاذ القرار الدقيقة لكل حالة

@@ -14,6 +14,7 @@ vi.mock('../context/AuthContext', () => ({
 vi.mock('../api/generalManager', () => ({
   getGeneralManagerPurchaseRequestsApi: vi.fn(),
   getGeneralManagerPurchaseOrdersApi: vi.fn(),
+  getGeneralManagerPurchaseOrderSummariesApi: vi.fn(),
   approveGeneralManagerPurchaseRequestApi: vi.fn(),
   rejectGeneralManagerPurchaseRequestApi: vi.fn(),
 }));
@@ -50,6 +51,7 @@ describe('GeneralManagerDashboardPage layout ordering', () => {
     (useAuth as any).mockReturnValue(mockGmAuth);
     vi.mocked(gmApi.getGeneralManagerPurchaseRequestsApi).mockResolvedValue([]);
     vi.mocked(gmApi.getGeneralManagerPurchaseOrdersApi).mockResolvedValue([]);
+    vi.mocked(gmApi.getGeneralManagerPurchaseOrderSummariesApi).mockResolvedValue([]);
     vi.mocked(pqApi.getPendingQuoteRequestsApi).mockResolvedValue([]);
   });
 

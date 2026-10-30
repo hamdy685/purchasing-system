@@ -9,6 +9,10 @@ const REQUESTS_BASE = '/general-manager/purchase-requests';
 export const getGeneralManagerPurchaseOrdersApi = async (params?: { per_page?: number | string; all?: boolean }): Promise<PurchaseOrder[]> =>
   (await apiClient.get<{ data: PurchaseOrder[] }>(BASE, { params: { per_page: 'all', all: true, ...params } })).data.data;
 
+// Header fields only (status, supplier, department, total) for the dashboard's counts and totals.
+export const getGeneralManagerPurchaseOrderSummariesApi = async (): Promise<PurchaseOrder[]> =>
+  (await apiClient.get<{ data: PurchaseOrder[] }>(BASE, { params: { summary: 1 } })).data.data;
+
 export const getGeneralManagerPurchaseOrderApi = async (id: number): Promise<PurchaseOrder> =>
   (await apiClient.get<{ data: PurchaseOrder }>(`${BASE}/${id}`)).data.data;
 

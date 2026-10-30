@@ -140,6 +140,23 @@ class GeneralManagerPurchaseOrderTest extends TestCase
         $this->assertEquals($this->accountingApprovedPo->id, $response->json('data.0.id'));
     }
 
+    public function test_gm_dashboard_summary_returns_header_fields_only(): void
+    {
+        $token = $this->gmUser->createToken('test_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson('/api/v1/general-manager/purchase-orders?summary=1');
+
+        $response->assertStatus(200);
+        $this->assertCount(1, $response->json('data'));
+        $response->assertJsonPath('data.0.id', $this->accountingApprovedPo->id);
+        $response->assertJsonPath('data.0.status', 'APPROVED_BY_ACCOUNTING');
+        $response->assertJsonPath('data.0.grand_total', 10925);
+        $response->assertJsonPath('data.0.supplier.id', $this->supplier->id);
+        $response->assertJsonPath('data.0.purchase_request.department.id', $this->dept->id);
+        $this->assertArrayNotHasKey('items', $response->json('data.0'));
+    }
+
     public function test_gm_can_view_approved_po_details(): void
     {
         $token = $this->gmUser->createToken('test_token')->plainTextToken;

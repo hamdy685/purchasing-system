@@ -18,8 +18,12 @@ class GeneralManagerPurchaseOrderController extends Controller
     /**
      * Display Purchase Orders approved by accounting — read-only for General Manager.
      */
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection|JsonResponse
     {
+        if ($request->boolean('summary')) {
+            return response()->json(['data' => $this->gmService->getGmPurchaseOrderSummaries($request->user())]);
+        }
+
         $perPageParam = $request->query('per_page');
         $perPage = ($perPageParam === 'all' || $request->boolean('all'))
             ? 'all'
