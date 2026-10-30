@@ -23,7 +23,7 @@ const PAGE_TITLES: Array<{ prefix: string; title: string }> = [
   { prefix: '/procurement/approved-requests', title: 'الطلبات المعتمدة للمشتريات' },
   { prefix: '/procurement/suppliers', title: 'إدارة موردي المشتريات' },
   { prefix: '/procurement/reports', title: 'تقارير وتحليلات المشتريات' },
-  { prefix: '/procurement', title: 'لوحة المشتريات' },
+  { prefix: '/procurement', title: 'لوحة إدارة المشتريات' },
   { prefix: '/accounting/supplier-payments', title: 'فواتير الموردين والمطابقة' },
   { prefix: '/accounting/supplier-accounts', title: 'حسابات وصرف الموردين' },
   { prefix: '/accounting/purchase-orders', title: 'أوامر الشراء للحسابات' },

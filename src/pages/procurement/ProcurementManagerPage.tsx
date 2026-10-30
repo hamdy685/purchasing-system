@@ -584,7 +584,7 @@ export const ProcurementManagerPage: React.FC = () => {
       matchesRoute = !request.procurement_route && !pendingSupplement && request.request_type !== 'COMPLEMENTARY';
     }
 
-    const matchesStage = queueStage === 'ALL' || (queueStage === 'EXECUTIVE_PENDING' ? (stage === 'EXECUTIVE_PENDING' || stage === 'PENDING_ROUTE') : stage === queueStage);
+    const matchesStage = queueStage === 'ALL' || stage === queueStage;
     const reqDate = String(pendingSupplement?.created_at || request.updated_at || request.created_at || '').slice(0, 10);
     const matchesDate = Boolean(pendingSupplement) || ((!queueDateFrom || reqDate >= queueDateFrom) && (!queueDateTo || reqDate <= queueDateTo));
 
@@ -891,102 +891,79 @@ export const ProcurementManagerPage: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in" dir="rtl">
-      {/* ── Header with Breadcrumb, Role Badge, and Navigation Tabs ── */}
-      <div className="flex flex-col gap-4 border-b border-slate-800 pb-5 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
-            <span>الرئيسية</span>
-            <span>›</span>
-            <span className="text-slate-200 font-bold">المشتريات</span>
-            <span className="mr-2 rounded-full border border-cyan-500/50 bg-cyan-950/60 px-3 py-0.5 text-xs font-bold text-cyan-300">
-              مدير المشتريات
-            </span>
-          </div>
-          <h1 className="text-xl font-black text-slate-100">لوحة إدارة المشتريات</h1>
-          <p className="mt-1 text-xs text-slate-400">راجع الطلبات المتاحة للدور الحالي، ونفّذ الإجراء المسموح به فقط.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => navigate('/procurement/purchase-requests')}
-            className={`font-black rounded-xl transition-all ${
-              activeTab === 0
-                ? 'bg-[#d97706] hover:bg-[#b45309] text-slate-950 border-[#d97706] shadow-md shadow-amber-950/40'
-                : 'text-slate-300 border-slate-800 hover:bg-slate-800'
-            }`}
-          >
-            الطلبات المعلقة ({queueRows.length})
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => { setActiveTab(2); setSearchParams({ tab: 'approved-quotes' }, { replace: true }); }}
-            className={`font-bold rounded-xl transition-all ${
-              activeTab === 2
-                ? 'bg-[#d97706] hover:bg-[#b45309] text-slate-950 border-[#d97706] shadow-md'
-                : 'text-slate-300 border-slate-800 hover:bg-slate-800'
-            }`}
-          >
-            الأسعار المعتمدة ({selectedQuotePrs.length})
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => { setActiveTab(5); setSearchParams({ tab: 'actual-pos' }, { replace: true }); }}
-            className={`font-black rounded-xl transition-all ${
-              activeTab === 5
-                ? 'bg-[#d97706] hover:bg-[#b45309] text-slate-950 border-[#d97706]'
-                : pendingActualPos.length > 0
-                ? 'border-indigo-500/80 bg-indigo-950/40 text-indigo-200 shadow-md shadow-indigo-950/40'
-                : 'text-slate-300 border-slate-800 hover:bg-slate-800'
-            }`}
-          >
-            <span>⚡ أوامر الشراء الفعلية</span>
-            {pendingActualPos.length > 0 && (
-              <span className="mr-1.5 rounded-full bg-emerald-500 text-slate-950 px-2 py-0.5 text-[10px] font-black animate-pulse font-mono">
-                {pendingActualPos.length}
+      {/* ── التنقل: المهام اللي عليها شغل بعددها، وبعدها روابط باقي الأقسام ── */}
+      <nav aria-label="أقسام المشتريات" className="space-y-2.5">
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            {
+              key: 'pending',
+              label: 'الطلبات المعلقة',
+              count: queueRows.length,
+              active: activeTab === 0,
+              onClick: () => navigate('/procurement/purchase-requests'),
+            },
+            {
+              key: 'approved-quotes',
+              label: 'الأسعار المعتمدة',
+              count: selectedQuotePrs.length,
+              active: activeTab === 2,
+              onClick: () => { setActiveTab(2); setSearchParams({ tab: 'approved-quotes' }, { replace: true }); },
+            },
+            {
+              key: 'actual-pos',
+              label: 'الأوامر الفعلية',
+              count: pendingActualPos.length,
+              active: activeTab === 5,
+              onClick: () => { setActiveTab(5); setSearchParams({ tab: 'actual-pos' }, { replace: true }); },
+            },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={tab.onClick}
+              aria-current={tab.active ? 'page' : undefined}
+              className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl border px-1.5 py-2.5 text-center transition-colors cursor-pointer ${
+                tab.active
+                  ? 'border-amber-500 bg-amber-500/15'
+                  : tab.count > 0
+                  ? 'border-slate-700 bg-slate-900/80 hover:border-amber-500/60'
+                  : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
+              }`}
+            >
+              <span className={`font-mono text-xl font-black leading-none ${
+                tab.active ? 'text-amber-300' : tab.count > 0 ? 'text-slate-50' : 'text-slate-500'
+              }`}>
+                {tab.count}
               </span>
-            )}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => navigate('/procurement/purchase-orders')}
-            className={`font-bold rounded-xl transition-all ${
-              activeTab === 1
-                ? 'bg-[#d97706] hover:bg-[#b45309] text-slate-950 border-[#d97706]'
-                : 'text-slate-300 border-slate-800 hover:bg-slate-800'
-            }`}
-          >
-            أرشيف أوامر الشراء
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => navigate('/procurement/suppliers')}
-            className={`font-bold rounded-xl transition-all ${
-              activeTab === 3
-                ? 'bg-[#d97706] hover:bg-[#b45309] text-slate-950 border-[#d97706]'
-                : 'text-slate-300 border-slate-800 hover:bg-slate-800'
-            }`}
-          >
-            إدارة الموردين
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => navigate('/procurement/reports')}
-            className={`font-bold rounded-xl transition-all ${
-              activeTab === 4
-                ? 'bg-[#d97706] hover:bg-[#b45309] text-slate-950 border-[#d97706]'
-                : 'text-slate-300 border-slate-800 hover:bg-slate-800'
-            }`}
-          >
-            التقارير والتحليلات
-          </Button>
+              <span className={`w-full text-[11px] font-bold leading-4 sm:text-xs ${
+                tab.active ? 'text-amber-200' : tab.count > 0 ? 'text-slate-200' : 'text-slate-500'
+              }`}>
+                {tab.label}
+              </span>
+            </button>
+          ))}
         </div>
-      </div>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-xs font-bold">
+          {[
+            { key: 'pos', label: 'أرشيف أوامر الشراء', active: activeTab === 1, to: '/procurement/purchase-orders' },
+            { key: 'suppliers', label: 'الموردين', active: activeTab === 3, to: '/procurement/suppliers' },
+            { key: 'reports', label: 'التقارير', active: activeTab === 4, to: '/procurement/reports' },
+          ].map((link) => (
+            <button
+              key={link.key}
+              type="button"
+              onClick={() => navigate(link.to)}
+              aria-current={link.active ? 'page' : undefined}
+              className={`py-1 underline-offset-4 transition-colors cursor-pointer hover:underline ${
+                link.active ? 'text-amber-300 underline' : 'text-slate-400 hover:text-slate-100'
+              }`}
+            >
+              {link.label}
+            </button>
+          ))}
+        </div>
+      </nav>
 
       {successBanner && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-200 shadow-lg shadow-emerald-950/40">
@@ -1005,111 +982,6 @@ export const ProcurementManagerPage: React.FC = () => {
       )}
 
       {pageError && <ErrorMessage error={pageError} onDismiss={() => setPageError(null)} onRetry={() => void loadData()} />}
-
-      {/* ── اختصارات الوصول السريع (Quick Shortcuts - 5 Cards Grid) ── */}
-      <div className="space-y-2.5" dir="rtl">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400">
-          <span>⚡</span>
-          <span>اختصارات الوصول السريع</span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {/* Shortcut 1: طابور الطلبات المعتمدة */}
-          <button
-            type="button"
-            onClick={() => handleScrollToQueue('ALL')}
-            className="group relative flex items-center gap-3 rounded-2xl border border-cyan-500/60 bg-cyan-950/20 p-3.5 hover:bg-cyan-900/30 hover:border-cyan-400 hover:shadow-lg hover:shadow-cyan-950/50 transition-all text-right cursor-pointer"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-600/30 border border-cyan-500/50 text-cyan-300 text-xl font-black shadow-inner group-hover:scale-105 transition-transform">
-              ⚡
-            </span>
-            <div className="min-w-0 flex-1">
-              <span className="truncate text-xs font-black text-cyan-300 group-hover:text-cyan-200 transition-colors block">
-                طابور الطلبات المعتمدة
-              </span>
-              <span className="text-[10px] text-slate-400 block mt-0.5">
-                متابعة واختيار مسارات الطلبات
-              </span>
-            </div>
-          </button>
-
-          {/* Shortcut 2: الأسعار المعتمدة للتعميد */}
-          <button
-            type="button"
-            onClick={() => { setActiveTab(2); setSearchParams({ tab: 'approved-quotes' }, { replace: true }); }}
-            className="group relative flex items-center gap-3 rounded-2xl border border-emerald-500/60 bg-emerald-950/20 p-3.5 hover:bg-emerald-900/30 hover:border-emerald-400 hover:shadow-lg hover:shadow-emerald-950/50 transition-all text-right cursor-pointer"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600/30 border border-emerald-500/50 text-emerald-300 text-xl font-black shadow-inner group-hover:scale-105 transition-transform">
-              ⚖️
-            </span>
-            <div className="min-w-0 flex-1">
-              <span className="truncate text-xs font-black text-emerald-300 group-hover:text-emerald-200 transition-colors block">
-                الأسعار المعتمدة للتعميد
-              </span>
-              <span className="text-[10px] text-slate-400 block mt-0.5">
-                إنشاء أوامر شراء للعروض المعتمدة
-              </span>
-            </div>
-          </button>
-
-          {/* Shortcut 3: أرشيف أوامر الشراء */}
-          <button
-            type="button"
-            onClick={() => navigate('/procurement/purchase-orders')}
-            className="group relative flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3.5 hover:bg-slate-850 hover:border-slate-700 hover:shadow-md transition-all text-right cursor-pointer"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950/80 border border-slate-800 text-slate-300 text-xl font-black group-hover:scale-105 transition-transform">
-              📑
-            </span>
-            <div className="min-w-0 flex-1">
-              <span className="truncate text-xs font-bold text-slate-200 group-hover:text-white transition-colors block">
-                أرشيف أوامر الشراء
-              </span>
-              <span className="text-[10px] text-slate-400 block mt-0.5">
-                سجل وتتبع أوامر الشراء الصادرة
-              </span>
-            </div>
-          </button>
-
-          {/* Shortcut 4: إدارة الموردين */}
-          <button
-            type="button"
-            onClick={() => navigate('/procurement/suppliers')}
-            className="group relative flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3.5 hover:bg-slate-850 hover:border-slate-700 hover:shadow-md transition-all text-right cursor-pointer"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950/80 border border-slate-800 text-amber-300 text-xl font-black group-hover:scale-105 transition-transform">
-              🏢
-            </span>
-            <div className="min-w-0 flex-1">
-              <span className="truncate text-xs font-bold text-slate-200 group-hover:text-white transition-colors block">
-                إدارة الموردين
-              </span>
-              <span className="text-[10px] text-slate-400 block mt-0.5">
-                دليل الموردين وبيانات التواصل
-              </span>
-            </div>
-          </button>
-
-          {/* Shortcut 5: التقارير والتحليلات */}
-          <button
-            type="button"
-            onClick={() => navigate('/procurement/reports')}
-            className="group relative flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3.5 hover:bg-slate-850 hover:border-slate-700 hover:shadow-md transition-all text-right cursor-pointer"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950/80 border border-slate-800 text-indigo-300 text-xl font-black group-hover:scale-105 transition-transform">
-              📊
-            </span>
-            <div className="min-w-0 flex-1">
-              <span className="truncate text-xs font-bold text-slate-200 group-hover:text-white transition-colors block">
-                التقارير والتحليلات
-              </span>
-              <span className="text-[10px] text-slate-400 block mt-0.5">
-                مؤشرات الإنفاق وحركة التوريدات
-              </span>
-            </div>
-          </button>
-        </div>
-      </div>
 
       {/* ── صندوق المهام والإجراءات المطلوبة منك الآن (4 Cards Grid) ── */}
       <div className="rounded-2xl border-2 border-cyan-500/30 bg-gradient-to-r from-slate-900 via-cyan-950/20 to-slate-900 p-4 sm:p-5 shadow-xl space-y-4">
@@ -1140,28 +1012,18 @@ export const ProcurementManagerPage: React.FC = () => {
             <div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-purple-200 font-bold flex items-center gap-1.5">
-                  <span className="text-base">👑</span> قرارات بانتظار المدير التنفيذي
+                  <span className="text-base">👑</span> بانتظار المدير التنفيذي
                 </span>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                  (executivePendingCount + pendingCount) > 0
+                  executivePendingCount > 0
                     ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
                     : 'bg-slate-800 text-slate-400'
                 }`}>
-                  {executivePendingCount + pendingCount} طلب
+                  {executivePendingCount} طلب
                 </span>
               </div>
-              <div className="mt-2 space-y-1 text-[11px]">
-                <div className="flex items-center justify-between text-slate-300">
-                  <span>⏳ بانتظار المبدئي (تسعير مباشر متاح):</span>
-                  <strong className="font-mono text-purple-300 font-bold">{executivePendingCount}</strong>
-                </div>
-                <div className="flex items-center justify-between text-slate-300">
-                  <span>🧭 معتمد مبدئياً (بانتظار التسعير/المسار):</span>
-                  <strong className="font-mono text-cyan-300 font-bold">{pendingCount}</strong>
-                </div>
-              </div>
-              <p className="text-[10px] text-slate-400 mt-2 leading-4 border-t border-purple-900/40 pt-1.5">
-                يمكن لمدير المشتريات تسعير الطلبات مباشرة وتجاوز الاعتماد المبدئي لإرسالها للاعتماد النهائي.
+              <p className="text-[11px] text-slate-400 mt-1.5 leading-5">
+                تقدر تسعّرها مباشرة من غير ما تستنى الاعتماد المبدئي
               </p>
             </div>
             <button
@@ -1169,7 +1031,7 @@ export const ProcurementManagerPage: React.FC = () => {
               className="w-full text-xs font-black bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-500 hover:to-indigo-500 text-white py-2.5 rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
               onClick={() => handleScrollToQueue('EXECUTIVE_PENDING')}
             >
-              <span>عرض طلبات المدير التنفيذي ({executivePendingCount + pendingCount})</span>
+              <span>عرض طلبات المدير التنفيذي ({executivePendingCount})</span>
               <span>←</span>
             </button>
           </div>
@@ -1460,7 +1322,7 @@ export const ProcurementManagerPage: React.FC = () => {
                     : 'border-purple-700/50 bg-purple-950/30 text-purple-300 hover:border-purple-500/60'
                 }`}
               >
-                👑 قرارات المدير التنفيذي: {executivePendingCount + pendingCount}
+                👑 قرارات المدير التنفيذي: {executivePendingCount}
               </button>
               <button
                 type="button"

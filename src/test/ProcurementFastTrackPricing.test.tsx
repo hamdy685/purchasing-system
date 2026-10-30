@@ -110,18 +110,18 @@ describe('ProcurementManagerPage - قرارات بانتظار المدير ال
 
     // Wait for the page to load
     await waitFor(() => {
-      expect(screen.getByText(/لوحة إدارة المشتريات/i)).toBeInTheDocument();
+      expect(screen.getByRole('navigation', { name: 'أقسام المشتريات' })).toBeInTheDocument();
     });
 
-    // 1. Check Card 1: قرارات بانتظار المدير التنفيذي
-    const execCardTitles = screen.getAllByText(/قرارات بانتظار المدير التنفيذي/i);
+    // 1. Check Card 1: بانتظار المدير التنفيذي
+    const execCardTitles = screen.getAllByText(/بانتظار المدير التنفيذي/i);
     expect(execCardTitles.length).toBeGreaterThanOrEqual(1);
 
-    // The card shows combined total 2 طلب (1 exec + 1 pending)
-    expect(screen.getAllByText(/2 طلب/i).length).toBeGreaterThanOrEqual(1);
+    // The card counts only requests actually awaiting the executive (route-pending ones live in their own card)
+    expect(screen.getAllByText(/^1 طلب$/i).length).toBeGreaterThanOrEqual(1);
 
     // Check the button inside the card
-    const viewExecBtn = screen.getByRole('button', { name: /عرض طلبات المدير التنفيذي \(2\)/i });
+    const viewExecBtn = screen.getByRole('button', { name: /عرض طلبات المدير التنفيذي \(1\)/i });
     expect(viewExecBtn).toBeInTheDocument();
 
     // 2. Click the button to filter by EXECUTIVE_PENDING
@@ -138,7 +138,7 @@ describe('ProcurementManagerPage - قرارات بانتظار المدير ال
     // Verify fast-track action button
     expect(screen.getByRole('button', { name: /تسعير مباشر وتخطي الاعتماد المبدئي/i })).toBeInTheDocument();
 
-    // Verify PR-PENDING-502 is also shown in the filtered executive decisions view
-    expect(screen.getByText('PR-PENDING-502')).toBeInTheDocument();
+    // PR-PENDING-502 awaits a route decision, not the executive, so the executive filter hides it
+    expect(screen.queryByText('PR-PENDING-502')).not.toBeInTheDocument();
   });
 });
