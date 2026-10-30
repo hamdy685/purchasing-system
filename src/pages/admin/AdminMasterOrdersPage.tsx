@@ -35,6 +35,7 @@ export const AdminMasterOrdersPage: React.FC = () => {
 
   // Selected Order for Force Edit Modal
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null);
   const [isForceModalOpen, setIsForceModalOpen] = useState<boolean>(false);
 
   // Selected Order for Force Delete Modal
@@ -91,8 +92,9 @@ export const AdminMasterOrdersPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const handleOpenForceEdit = (orderId: number) => {
-    setSelectedOrderId(orderId);
+  const handleOpenForceEdit = (order: MasterOrderRow) => {
+    setSelectedOrderId(order.order_id ?? null);
+    setSelectedRequestId(order.order_id ? null : order.request_id);
     setIsForceModalOpen(true);
   };
 
@@ -452,7 +454,7 @@ export const AdminMasterOrdersPage: React.FC = () => {
             </span>
           </div>
           <div className="text-[11px] text-slate-400">
-            * اضغط على زر <strong className="text-amber-300">"👑 تعديل سيادي"</strong> لإجراء تجاوز استثنائي كامل لأي معاملة
+            * اضغط <strong className="text-amber-300">«تعديل»</strong> لتعديل بيانات الطلب أو نقله لمرحلة أخرى
           </div>
         </div>
 
@@ -601,14 +603,14 @@ export const AdminMasterOrdersPage: React.FC = () => {
                           {/* Force Edit & Sovereign Delete Actions */}
                           <td className="p-3 text-center">
                             <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                              {order.order_id ? (
+                              {order.order_id || order.request_id ? (
                                 <Button
                                   variant="warning"
                                   size="sm"
-                                  onClick={() => handleOpenForceEdit(order.order_id!)}
+                                  onClick={() => handleOpenForceEdit(order)}
                                   className="text-xs h-8 px-2.5 font-black shadow-md shadow-amber-950/40 border-amber-400/60 text-slate-950"
                                 >
-                                  👑 تعديل سيادي
+                                  تعديل
                                 </Button>
                               ) : (
                                 <Link to={`/requests/${order.request_id}`}>
@@ -732,14 +734,14 @@ export const AdminMasterOrdersPage: React.FC = () => {
                       {order.created_at ? order.created_at.slice(0, 10) : '—'}
                     </span>
                     <div className="flex items-center gap-1.5">
-                      {order.order_id && (
+                      {(order.order_id || order.request_id) && (
                         <Button
                           variant="warning"
                           size="sm"
-                          onClick={() => handleOpenForceEdit(order.order_id!)}
+                          onClick={() => handleOpenForceEdit(order)}
                           className="text-xs h-8 px-3 font-black shadow-md border-amber-400/60 text-slate-950"
                         >
-                          👑 تعديل سيادي
+                          تعديل
                         </Button>
                       )}
                       <Button
@@ -762,13 +764,15 @@ export const AdminMasterOrdersPage: React.FC = () => {
       </div>
 
       {/* ── Sovereign Force Edit Modal ── */}
-      {selectedOrderId && (
+      {(selectedOrderId || selectedRequestId) && (
         <AdminForceEditModal
           orderId={selectedOrderId}
+          requestId={selectedRequestId}
           isOpen={isForceModalOpen}
           onClose={() => {
             setIsForceModalOpen(false);
             setSelectedOrderId(null);
+            setSelectedRequestId(null);
           }}
           onSuccess={() => {
             fetchOrders(true);

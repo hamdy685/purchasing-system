@@ -339,6 +339,111 @@ class AdminMasterOrdersTest extends TestCase
         $this->assertEquals('مؤسسة أسمنت المعلم (ج)', $row2['supplier_name']);
     }
 
+    /**
+     * Reproduces PO-260: steel lines left at quantity 0 after weighing make the whole
+     * save fail with a generic 422, and the message never names the offending item.
+     */
+    public function test_force_update_with_zero_quantity_lines_reports_the_actual_item(): void
+    {
+        $admin = $this->makeUser('admin', 'admin-zero-qty@ashbiliya.com');
+        $dept = Department::create(['name' => 'التنفيذ', 'code' => 'EXEC0']);
+        $supplier = Supplier::create(['company_name' => 'حسان', 'name' => 'مورد حديد', 'is_active' => true]);
+
+        $pr = PurchaseRequest::create([
+            'request_number' => 'PR-ZERO-1',
+            'department_id' => $dept->id,
+            'user_id' => $admin->id,
+            'status' => 'ISSUED',
+            'total_estimated_cost' => 1000,
+        ]);
+        $po = PurchaseOrder::create([
+            'po_number' => 'PO-ZERO-1',
+            'purchase_request_id' => $pr->id,
+            'supplier_id' => $supplier->id,
+            'created_by_user_id' => $admin->id,
+            'status' => 'ISSUED',
+            'subtotal' => 1000,
+            'grand_total' => 1000,
+        ]);
+        $weighed = PurchaseOrderItem::create([
+            'purchase_order_id' => $po->id,
+            'item_description' => 'حديد',
+            'quantity' => 5.18,
+            'uom' => 'TON',
+            'unit_price' => 43000,
+            'line_total' => 222740,
+        ]);
+        $zero = PurchaseOrderItem::create([
+            'purchase_order_id' => $po->id,
+            'item_description' => 'حديد 4 لنيه',
+            'quantity' => 0,
+            'uom' => 'TON',
+            'unit_price' => 43000,
+            'line_total' => 0,
+        ]);
+
+        // Exactly what the screen sends: every loaded line, status ISSUED.
+        $response = $this->actingAs($admin, 'sanctum')
+            ->putJson("/api/v1/admin/orders/{$po->id}/force-update", [
+                'status' => 'ISSUED',
+                'supplier_id' => $supplier->id,
+                'is_actual_po' => false,
+                'admin_reason' => 'تصحيح بيانات الوزنة',
+                'items' => [
+                    ['id' => $weighed->id, 'supplier_id' => $supplier->id, 'item_description' => 'حديد', 'quantity' => 5.18, 'uom' => 'TON', 'unit_price' => 43000, 'delete' => false],
+                    ['id' => $zero->id, 'supplier_id' => $supplier->id, 'item_description' => 'حديد 4 لنيه', 'quantity' => 0, 'uom' => 'TON', 'unit_price' => 43000, 'delete' => false],
+                ],
+            ]);
+
+        $response->assertOk();
+        $this->assertEquals(0.0, (float) $zero->fresh()->quantity);
+    }
+
+    public function test_force_update_validation_error_names_the_item_in_arabic(): void
+    {
+        $admin = $this->makeUser('admin', 'admin-bad-item@ashbiliya.com');
+        $supplier = Supplier::create(['company_name' => 'مورد', 'name' => 'مورد', 'is_active' => true]);
+        $dept = Department::create(['name' => 'المكتب', 'code' => 'OFF0']);
+        $pr = PurchaseRequest::create([
+            'request_number' => 'PR-BAD-1',
+            'department_id' => $dept->id,
+            'user_id' => $admin->id,
+            'status' => 'ISSUED',
+            'total_estimated_cost' => 10,
+        ]);
+        $po = PurchaseOrder::create([
+            'purchase_request_id' => $pr->id,
+            'po_number' => 'PO-BAD-1',
+            'supplier_id' => $supplier->id,
+            'created_by_user_id' => $admin->id,
+            'status' => 'ISSUED',
+            'subtotal' => 0,
+            'grand_total' => 0,
+        ]);
+        $item = PurchaseOrderItem::create([
+            'purchase_order_id' => $po->id,
+            'item_description' => 'أسمنت',
+            'quantity' => 1,
+            'uom' => 'TON',
+            'unit_price' => 10,
+            'line_total' => 10,
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->putJson("/api/v1/admin/orders/{$po->id}/force-update", [
+                'admin_reason' => 'اختبار',
+                'items' => [
+                    ['id' => $item->id, 'item_description' => 'أسمنت', 'quantity' => -2, 'uom' => 'TON', 'unit_price' => 10],
+                ],
+            ]);
+
+        $response->assertStatus(422);
+        $message = (string) $response->json('message');
+        $this->assertMatchesRegularExpression('/[\x{0600}-\x{06FF}]/u', $message);
+        $this->assertStringContainsString('البند 1', $message);
+        $this->assertStringContainsString('الكمية', $message);
+    }
+
     public function test_non_admin_cannot_access_or_force_update(): void
     {
         $employee = $this->makeUser('employee', 'emp-test@ashbiliya.com');

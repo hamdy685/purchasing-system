@@ -555,6 +555,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::get('/all-orders-master', [AdminMasterOrdersController::class, 'index']);
     Route::get('/orders/{id}/details', [AdminMasterOrdersController::class, 'showOrder']);
     Route::put('/orders/{id}/force-update', [AdminMasterOrdersController::class, 'forceUpdateOrder']);
+    Route::get('/requests/{id}/stage', [AdminMasterOrdersController::class, 'showRequestStage'])->whereNumber('id');
+    Route::post('/requests/{id}/move-stage', [AdminMasterOrdersController::class, 'moveRequestStage'])->whereNumber('id');
     Route::delete('/orders/{id}/force-delete', [AdminMasterOrdersController::class, 'forceDeleteOrder']);
 });
 

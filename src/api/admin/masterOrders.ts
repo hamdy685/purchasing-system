@@ -140,7 +140,21 @@ export interface ForceUpdateOrderPayload {
   admin_reason: string;
   sync_receipt?: boolean;
   sync_pr?: boolean;
+  request_stage?: string | null;
   items?: ForceUpdateItemPayload[];
+}
+
+export interface RequestStageOption {
+  value: string;
+  label: string;
+  available: boolean;
+  reason: string | null;
+  current: boolean;
+}
+
+export interface RequestStageInfo {
+  current_stage: { value: string; label: string } | null;
+  stage_options: RequestStageOption[];
 }
 
 export interface OrderMasterDetailsResponse {
@@ -157,9 +171,32 @@ export interface OrderMasterDetailsResponse {
     };
     audit_logs: any[];
     available_suppliers: Array<{ id: number; company_name: string; name: string; code: string }>;
-    allowed_statuses: Array<{ value: string; label: string }>;
-  };
+  } & RequestStageInfo;
 }
+
+export interface RequestStageDetailsResponse {
+  success: boolean;
+  data: {
+    request: any;
+    audit_logs: any[];
+  } & RequestStageInfo;
+}
+
+export const getRequestStageApi = async (id: number): Promise<RequestStageDetailsResponse> => {
+  const response = await apiClient.get<RequestStageDetailsResponse>(`/admin/requests/${id}/stage`);
+  return response.data;
+};
+
+export const moveRequestStageApi = async (
+  id: number,
+  payload: { request_stage: string; admin_reason: string }
+): Promise<{ success: boolean; message: string; data: any }> => {
+  const response = await apiClient.post<{ success: boolean; message: string; data: any }>(
+    `/admin/requests/${id}/move-stage`,
+    payload
+  );
+  return response.data;
+};
 
 export const getMasterOrdersApi = async (params: {
   search?: string;

@@ -135,12 +135,16 @@ class PurchaseReceiptService
             // 4. Warehouse keeper assignment check:
             // Never exclude orders where warehouse_keeper_user_id is null!
             ->where(function ($q) use ($user) {
-                $q->whereDoesntHave('receipts')
+                // Cancelled receipts (e.g. after an admin rollback) do not pin the order to their keeper.
+                $q->whereDoesntHave('receipts', fn ($rq) => $rq->where('status', '!=', 'CANCELLED'))
                   ->orWhereHas('receipts', function ($rq) use ($user) {
-                      $rq->whereNull('warehouse_keeper_user_id');
-                      if ($user) {
-                          $rq->orWhere('warehouse_keeper_user_id', $user->id);
-                      }
+                      $rq->where('status', '!=', 'CANCELLED')
+                          ->where(function ($keeperQ) use ($user) {
+                              $keeperQ->whereNull('warehouse_keeper_user_id');
+                              if ($user) {
+                                  $keeperQ->orWhere('warehouse_keeper_user_id', $user->id);
+                              }
+                          });
                   });
             })
             // 5. Conditions matching notifications:
