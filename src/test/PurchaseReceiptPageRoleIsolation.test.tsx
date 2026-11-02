@@ -64,7 +64,7 @@ describe('PurchaseReceiptPage Role Isolation', () => {
     expect(screen.getByPlaceholderText('الكمية المستلمة')).toBeInTheDocument();
   });
 
-  it('renders compact single-line table when mode is site for site engineer or employee', async () => {
+  it('renders simple item cards when mode is site for site engineer or employee', async () => {
     vi.mocked(authContext.useAuth).mockReturnValue({
       user: { id: 7, name: 'م. أحمد مهندس الموقع', role: 'site_engineer' } as any,
       hasRole: (role: string) => role === 'site_engineer',
@@ -110,10 +110,9 @@ describe('PurchaseReceiptPage Role Isolation', () => {
       </MemoryRouter>
     );
 
-    // Site engineer sees the new compact table headers
+    // Site engineer sees one simple card per item
     expect((await screen.findAllByText('REC-SITE-50')).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('البند والمواصفات')).toBeInTheDocument();
-    expect(screen.getByText('الكمية المعتمدة مدنيًا')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('الكمية المعتمدة')).toBeInTheDocument();
     expect(screen.getAllByText('خرسانة جاهزة للقواعد المسلحة').length).toBeGreaterThanOrEqual(1);
 
     // The quantity input is present and bound

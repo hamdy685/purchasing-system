@@ -27,6 +27,7 @@ import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { SupplementItemBadge } from '../../components/common/SupplementItemBadge';
 import ActionRequiredInbox, { ActionInboxItem } from '../../components/dashboard/ActionRequiredInbox';
 import { formatDateTime24h } from '../../utils/dateTime';
+import SiteReceiptItemCards from '../../components/receipts/SiteReceiptItemCards';
 import SiteReceiptItemsTable from '../../components/receipts/SiteReceiptItemsTable';
 
 interface ReceiptColorTheme {
@@ -520,39 +521,6 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* ── Page Header Banner (site engineers only; the layout already names the warehouse page) ── */}
-      {mode !== 'warehouse' && (
-      <div
-        className="rounded-2xl border-2 p-4 sm:p-6 shadow-xl space-y-3 border-emerald-500/40 bg-gradient-to-r from-slate-900 via-emerald-950/20 to-slate-900"
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-start sm:items-center gap-3">
-            <span
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-2xl font-black shadow-inner bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
-            >
-              🏗️
-            </span>
-            <div>
-              <h1 className="text-lg sm:text-xl font-black text-slate-100 flex items-center gap-2.5 flex-wrap">
-                {isReviewer
-                  ? 'إذن استلام المواد — فحص واعتماد الاستلام الميداني'
-                  : 'إذن استلام المواد — فحص واعتماد الاستلام'}
-                {receipts.length > 0 && (
-                  <span className="rounded-full px-3 py-0.5 text-xs font-black bg-emerald-500 text-slate-950">
-                    {receipts.length} أمر بانتظار الفحص
-                  </span>
-                )}
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-400 mt-1">
-                {isReviewer
-                  ? 'راجع استلام المخزن وافحص المواد فنياً وهندسياً للتأكد من مطابقتها قبل الاعتماد النهائي وإرسالها للمشتريات لإصدار أمر الشراء الفعلي.'
-                  : 'راجع استلام المخزن وافحص المواد هندسياً وفنياً في الموقع للتأكد من مطابقتها قبل الاعتماد النهائي وإرسالها للمشتريات لإصدار أمر الشراء الفعلي.'}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-      )}
 
       {successMessage && (
         <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/50 p-4 text-sm font-bold text-emerald-300 flex items-center justify-between animate-fade-in">
@@ -1142,333 +1110,150 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
                     <Card
                       id={`receipt-card-${receipt.id}`}
                       key={receipt.id}
-                      className={`p-4 sm:p-6 space-y-5 border-2 ${
+                      className={`p-3 sm:p-5 space-y-3 border-2 ${
                         isTargeted
                           ? 'border-cyan-400 ring-4 ring-cyan-500/30 bg-slate-900 shadow-cyan-950/60'
                           : 'border-emerald-500/50 bg-slate-900/95'
                       } shadow-2xl rounded-2xl transition-all`}
                     >
-                      {/* Header */}
-                      <div className="space-y-3 border-b border-slate-800 pb-4">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex items-center gap-2.5 flex-wrap">
-                            <span className="font-mono text-base sm:text-lg font-black text-emerald-300 bg-emerald-950 border border-emerald-700 px-3.5 py-1.5 rounded-xl shadow-inner">
-                              {receipt.receipt_number}
-                            </span>
-                            <span className="text-xs sm:text-sm font-bold text-slate-300 bg-slate-800 border border-slate-700 px-3 py-1 rounded-lg">
-                              أمر شراء: <span className="font-mono text-cyan-300">{receipt.purchase_order?.po_number}</span>
-                            </span>
-                            {Boolean(
-                              (receipt as any).is_supplementary ||
-                              (receipt.purchase_order as any)?.is_supplementary ||
-                              receipt.items?.some((i) => i.purchase_order_item?.is_supplementary) ||
-                              receipt.purchase_order?.items?.some((i) => i.is_supplementary) ||
-                              receipt.purchase_order?.notes?.includes('كمالة')
-                            ) && (
-                              <span className="text-xs sm:text-sm font-black text-amber-300 bg-amber-950/90 border border-amber-500/80 px-3 py-1 rounded-xl flex items-center gap-1.5 shadow-md">
-                                <span>⚡</span>
-                                <span>طلب كمالة معتمد</span>
-                              </span>
-                            )}
-                            {receipt.receipt_type === 'SITE_DIRECT' && (
-                              <span className="text-xs sm:text-sm font-black text-amber-200 bg-amber-950/90 border border-amber-500/80 px-3 py-1 rounded-xl flex items-center gap-1.5 shadow-md">
-                                <span>🏗️</span>
-                                <span>توريد مباشر لموقع المباني (استلام مباشر بالموقع دون مرور بالمخزن)</span>
-                              </span>
-                            )}
-                            {receipt.receipt_type === 'REQUESTER_OFFICE' && (
-                              <span className="text-xs sm:text-sm font-black text-indigo-200 bg-indigo-950/90 border border-indigo-500/80 px-3 py-1 rounded-xl flex items-center gap-1.5 shadow-md">
-                                <span>🏢</span>
-                                <span>توريد مستلزمات مكتبية (استلام وتأكيد مباشر في مقر الشركة)</span>
-                              </span>
-                            )}
-                            {(receipt.is_internal_warehouse || receipt.supplier?.company_name === 'المخزن الداخلي' || receipt.purchase_order?.supplier?.company_name === 'المخزن الداخلي') && (
-                              <span className="text-xs sm:text-sm font-black text-purple-200 bg-purple-950/90 border border-purple-500/80 px-3 py-1 rounded-xl flex items-center gap-1.5 shadow-md">
-                                <span>🏛️</span>
-                                <span>صرف من رصيد المخزن الداخلي (بضاعة متواجدة مسبقاً - سعر 0)</span>
-                              </span>
-                            )}
-                            {receipt.weighing_group && (
-                              <span className="text-xs sm:text-sm font-black text-indigo-200 bg-indigo-950/90 border border-indigo-500/80 px-3 py-1 rounded-xl flex items-center gap-1.5 shadow-md">
-                                <span>⚖️</span>
-                                <span>وزنة حديد مجمعة ({receipt.weighing_group.group_number})</span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                      {(() => {
+                        const isInternal = receipt.is_internal_warehouse || receipt.supplier?.company_name === 'المخزن الداخلي' || receipt.purchase_order?.supplier?.company_name === 'المخزن الداخلي';
+                        const supplierName = receipt.supplier?.company_name || receipt.supplier_name || receipt.purchase_order?.supplier?.company_name || (isInternal ? 'المخزن الداخلي' : '');
+                        const firstPoItem = receipt.items?.find((i) => i.purchase_order_item?.item_reference || i.purchase_order_item?.region || i.purchase_order_item?.pr_item?.item_reference || i.purchase_order_item?.pr_item?.region)?.purchase_order_item;
+                        const receiptParcel =
+                          receipt.purchase_order?.purchase_request?.parcel_reference ||
+                          receipt.purchase_request?.parcel_reference ||
+                          firstPoItem?.item_reference ||
+                          firstPoItem?.pr_item?.item_reference ||
+                          null;
+                        const receiptRegion =
+                          receipt.purchase_order?.purchase_request?.region ||
+                          receipt.purchase_request?.region ||
+                          firstPoItem?.region ||
+                          firstPoItem?.pr_item?.region ||
+                          null;
+                        const isSupplementary = Boolean(
+                          (receipt as any).is_supplementary ||
+                          (receipt.purchase_order as any)?.is_supplementary ||
+                          receipt.items?.some((i) => i.purchase_order_item?.is_supplementary) ||
+                          receipt.purchase_order?.items?.some((i) => i.is_supplementary) ||
+                          receipt.purchase_order?.notes?.includes('كمالة')
+                        );
+                        const tag =
+                          receipt.receipt_type === 'SITE_DIRECT' ? '🏗️ توريد مباشر للموقع'
+                          : receipt.receipt_type === 'REQUESTER_OFFICE' ? '🏢 مستلزمات مكتبية'
+                          : isInternal ? '🏛️ من المخزن الداخلي'
+                          : null;
+                        const photoUrl = receipt.photo_url || receipt.photo_path ? getReceiptPhotoUrl(receipt) : null;
 
-                        {(() => {
-                          const receiptParcel =
-                            receipt.purchase_order?.purchase_request?.parcel_reference ||
-                            receipt.purchase_request?.parcel_reference ||
-                            receipt.items?.find((i) => i.purchase_order_item?.item_reference || i.purchase_order_item?.pr_item?.item_reference)?.purchase_order_item?.item_reference ||
-                            receipt.items?.find((i) => i.purchase_order_item?.item_reference || i.purchase_order_item?.pr_item?.item_reference)?.purchase_order_item?.pr_item?.item_reference ||
-                            null;
-
-                          const receiptRegion =
-                            receipt.purchase_order?.purchase_request?.region ||
-                            receipt.purchase_request?.region ||
-                            receipt.items?.find((i) => i.purchase_order_item?.region || i.purchase_order_item?.pr_item?.region)?.purchase_order_item?.region ||
-                            receipt.items?.find((i) => i.purchase_order_item?.region || i.purchase_order_item?.pr_item?.region)?.purchase_order_item?.pr_item?.region ||
-                            null;
-
-                          const isInternal = receipt.is_internal_warehouse || receipt.supplier?.company_name === 'المخزن الداخلي' || receipt.purchase_order?.supplier?.company_name === 'المخزن الداخلي';
-                          const supplierName = receipt.supplier?.company_name || receipt.supplier_name || receipt.purchase_order?.supplier?.company_name || (isInternal ? 'المخزن الداخلي' : 'مورد غير محدد');
-
-                          return (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs sm:text-sm pt-1">
-                              <div className="flex items-center gap-2 text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                                <span className="text-base">{isInternal ? '🏛️' : '🏢'}</span>
-                                <div>
-                                  <span className="text-slate-400 block text-[11px]">المورد:</span>
-                                  <span className="font-bold text-slate-100">{supplierName}</span>
-                                </div>
-                              </div>
-
-                              {receipt.receipt_type === 'SITE_DIRECT' ? (
-                                <div className="flex items-center gap-2 text-indigo-200 bg-indigo-950/50 p-2.5 rounded-xl border border-indigo-700/60">
-                                  <span className="text-base">🏗️</span>
-                                  <div>
-                                    <span className="text-indigo-400 block text-[11px] font-bold">مسار التوريد:</span>
-                                    <span className="font-bold text-white">مباشر للموقع من المورد</span>
-                                  </div>
-                                </div>
-                              ) : receipt.warehouse_keeper ? (
-                                <div className="flex items-center gap-2 text-amber-300 bg-amber-950/40 p-2.5 rounded-xl border border-amber-800/50">
-                                  <span className="text-base">📦</span>
-                                  <div>
-                                    <span className="text-amber-400/80 block text-[11px]">أمين المخزن:</span>
-                                    <span className="font-bold">{receipt.warehouse_keeper.name}</span>
-                                  </div>
-                                </div>
-                              ) : null}
-
-                              {/* Parcel Reference Callout */}
-                              <div className="flex items-center gap-2 text-cyan-200 bg-cyan-950/40 p-2.5 rounded-xl border border-cyan-800/50">
-                                <span className="text-base">🏷️</span>
-                                <div>
-                                  <span className="text-cyan-400/80 block text-[11px] font-bold">رقم قطعة الأرض:</span>
-                                  <span className="font-mono font-black text-cyan-300 text-xs sm:text-sm">{receiptParcel || 'غير مسجل'}</span>
-                                </div>
-                              </div>
-
-                              {/* Region Callout */}
-                              <div className="flex items-center gap-2 text-amber-200 bg-amber-950/40 p-2.5 rounded-xl border border-amber-800/50">
-                                <span className="text-base">📍</span>
-                                <div>
-                                  <span className="text-amber-400/80 block text-[11px] font-bold">المنطقة:</span>
-                                  <span className="font-black text-amber-300 text-xs sm:text-sm">{receiptRegion || 'غير مسجلة'}</span>
-                                </div>
-                              </div>
+                        return (
+                          <div className="space-y-2 border-b border-slate-800 pb-3">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <h3 className="text-base font-black text-slate-100">
+                                أمر شراء <span className="font-mono">#{receipt.purchase_order?.po_number}</span>
+                              </h3>
+                              <span className="font-mono text-xs font-bold text-emerald-300">{receipt.receipt_number}</span>
                             </div>
-                          );
-                        })()}
-
-                        {receipt.warehouse_notes && (
-                          <div className="rounded-xl border border-amber-500/40 bg-amber-950/30 p-3 text-xs sm:text-sm text-amber-200">
-                            <strong className="text-amber-400">ملاحظات أمين المخزن: </strong>
-                            {receipt.warehouse_notes}
-                          </div>
-                        )}
-
-                        {/* Attached Photo Display for Site Engineer */}
-                        {Boolean(receipt.photo_url || receipt.photo_path) && (
-                          <div className="rounded-2xl border-2 border-cyan-500/50 bg-cyan-950/25 p-4 space-y-3 shadow-md">
-                            <div className="flex items-center justify-between flex-wrap gap-2">
-                              <span className="text-xs sm:text-sm font-black text-cyan-200 flex items-center gap-2">
-                                <span>📷</span> صورة فحص واستلام المخزن (بون الميزان / وزنة الحديد المرفقة):
-                              </span>
-                              <div className="flex items-center gap-3">
-                                {Boolean(receipt.photo_path?.includes('drive.google.com') || receipt.photo_url?.includes('drive.google.com')) && (
-                                  <a
-                                    href={receipt.photo_path?.includes('drive.google.com') ? receipt.photo_path : receipt.photo_url!}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-xs font-bold text-emerald-400 hover:text-emerald-300 underline inline-flex items-center gap-1"
-                                  >
-                                    <span>📁</span> فتح في Google Drive ↗
-                                  </a>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => setPreviewPhotoUrl(getReceiptPhotoUrl(receipt))}
-                                  className="text-xs font-bold text-cyan-400 hover:text-cyan-300 underline inline-flex items-center gap-1 cursor-pointer"
-                                >
-                                  <span>🔍</span> عرض بالحجم الكامل
-                                </button>
+                            <p className="text-sm font-bold text-slate-200">
+                              {[supplierName, receiptParcel && `قطعة ${receiptParcel}`, receiptRegion && `منطقة ${receiptRegion}`].filter(Boolean).join(' · ')}
+                            </p>
+                            {(tag || isSupplementary) && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {tag && <span className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-0.5 text-xs font-bold text-slate-200">{tag}</span>}
+                                {isSupplementary && <span className="rounded-lg border border-amber-600/60 bg-amber-950/80 px-2 py-0.5 text-xs font-bold text-amber-300">⚡ كمالة</span>}
                               </div>
-                            </div>
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3.5 bg-slate-950/90 p-3 rounded-xl border border-slate-800">
-                              <div
-                                onClick={() => setPreviewPhotoUrl(getReceiptPhotoUrl(receipt))}
-                                className="relative h-24 w-24 sm:h-28 sm:w-28 rounded-xl overflow-hidden border-2 border-cyan-400/80 cursor-pointer shrink-0 shadow-lg group"
+                            )}
+                            {/* SITE_DIRECT notes are written by the system, not the warehouse keeper */}
+                            {receipt.warehouse_notes && receipt.receipt_type !== 'SITE_DIRECT' && (
+                              <p className="text-xs text-amber-200">📝 {receipt.warehouse_notes}</p>
+                            )}
+                            {photoUrl && (
+                              <button
+                                type="button"
+                                onClick={() => setPreviewPhotoUrl(photoUrl)}
+                                className="flex w-full items-center gap-3 rounded-xl border border-slate-700 bg-slate-950 p-2 text-right cursor-pointer"
                               >
-                                <img
-                                  src={getReceiptPhotoUrl(receipt)}
-                                  alt="صورة الاستلام الميداني"
-                                  className="h-full w-full object-cover group-hover:scale-105 transition-transform"
-                                />
-                                <div className="absolute inset-0 bg-slate-950/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <span className="text-xs font-bold text-white bg-slate-900/90 px-2 py-1 rounded">🔍 تكبير</span>
-                                </div>
-                              </div>
-                              <div className="text-xs space-y-1.5 flex-1">
-                                <p className="font-black text-slate-100 text-sm">
-                                  صورة موثقة بواسطة أمين المخزن أثناء استلام الشحنة
-                                </p>
-                                <p className="text-slate-300">
-                                  يمكنك مطابقة بون الميزان وأختام الحديد ومطابقتها هندسياً قبل تأكيد الاعتماد النهائي.
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => setPreviewPhotoUrl(getReceiptPhotoUrl(receipt))}
-                                  className="text-xs font-bold text-cyan-400 hover:underline cursor-pointer"
-                                >
-                                  اضغط هنا لمعاينة الصورة المكبرة ←
-                                </button>
-                              </div>
-                            </div>
+                                <img src={photoUrl} alt="صورة الاستلام" className="h-14 w-14 shrink-0 rounded-lg object-cover" />
+                                <span className="text-sm font-bold text-cyan-300">📷 صورة الاستلام — اضغط للتكبير</span>
+                              </button>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        );
+                      })()}
 
-                      {/* Items Cards */}
                       <div className="space-y-4">
                         {receipt.weighing_group || receipt.receipt_type === 'STEEL_WEIGHING_GROUP' ? (
                           (() => {
                             const wg = receipt.weighing_group;
                             const totalOrd = Number(wg?.total_ordered_weight || receipt.items?.reduce((s, i) => s + Number(i.ordered_quantity || 0), 0) || 0);
                             const totalRec = Number(wg?.total_received_weight || receipt.items?.reduce((s, i) => s + Number(i.received_quantity || 0), 0) || 0);
-                            const unitPrice = Number(wg?.unit_price || wg?.items?.[0]?.unit_price || receipt.items?.[0]?.purchase_order_item?.unit_price || 0);
-                            const totalVal = Math.round(totalRec * unitPrice * 100) / 100;
                             const diff = Math.round((totalRec - totalOrd) * 1000) / 1000;
 
                             return (
-                              <div className="rounded-2xl border-2 border-indigo-500/80 bg-slate-950/95 p-5 sm:p-6 space-y-4 shadow-xl">
-                                <div className="flex items-center justify-between gap-3 flex-wrap border-b border-indigo-500/30 pb-3">
-                                  <div className="flex items-center gap-3">
-                                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-300 text-2xl border border-indigo-500/40 shrink-0">
-                                      ⚖️
-                                    </span>
-                                    <div>
-                                      <h4 className="text-base sm:text-lg font-black text-white">
-                                        وزنة حديد مجمعة (ميزان بسكول) — {wg?.group_number || 'شحنة موحدة'}
-                                      </h4>
-                                      <p className="text-xs text-indigo-200/80 mt-0.5">
-                                        تم استلام الشحنة كوزنة واحدة وإجمالي كمية واحدة دون توزيع نسبي.
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className={`px-3 py-1 rounded-xl text-xs font-black border ${
-                                      Math.abs(diff) < 0.001
-                                        ? 'bg-emerald-950/80 border-emerald-500/70 text-emerald-300'
-                                        : diff > 0
-                                        ? 'bg-cyan-950/80 border-cyan-500/70 text-cyan-300'
-                                        : 'bg-amber-950/80 border-amber-500/70 text-amber-300'
-                                    }`}>
-                                      {Math.abs(diff) < 0.001 ? '✅ مطابق تماماً' : diff > 0 ? `📈 زيادة توريد (+${diff} طن)` : `⚠️ عجز توريد (${diff} طن)`}
-                                    </span>
-                                  </div>
+                              <div className="rounded-xl border border-indigo-500/60 bg-slate-950/90 p-3 space-y-2">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  <h4 className="text-base font-black text-white">⚖️ وزنة حديد {wg?.group_number || ''}</h4>
+                                  <span className={`rounded-lg border px-2 py-0.5 text-xs font-black ${
+                                    Math.abs(diff) < 0.001
+                                      ? 'border-emerald-500/70 text-emerald-300'
+                                      : diff > 0
+                                      ? 'border-cyan-500/70 text-cyan-300'
+                                      : 'border-amber-500/70 text-amber-300'
+                                  }`}>
+                                    {Math.abs(diff) < 0.001 ? '✅ مطابق' : diff > 0 ? `زيادة +${formatCleanQty(diff)} طن` : `عجز ${formatCleanQty(diff)} طن`}
+                                  </span>
                                 </div>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs sm:text-sm">
-                                  <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-3.5 space-y-1">
-                                    <span className="text-slate-400 block text-xs">إجمالي الكمية المطلوبة:</span>
-                                    <strong className="text-base font-black text-indigo-300">{totalOrd} طن</strong>
+                                <div className="grid grid-cols-2 gap-2 text-center">
+                                  <div className="rounded-lg bg-slate-900 p-2">
+                                    <span className="block text-xs text-slate-400">المطلوب</span>
+                                    <strong className="font-mono text-lg font-black text-slate-100">{formatCleanQty(totalOrd)} طن</strong>
                                   </div>
-                                  <div className="rounded-xl border border-emerald-500/50 bg-emerald-950/40 p-3.5 space-y-1">
-                                    <span className="text-emerald-400 block text-xs">إجمالي الكمية المستلمة (بسكول):</span>
-                                    <strong className="text-base font-black text-emerald-300">{totalRec} طن</strong>
-                                  </div>
-                                  <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-3.5 space-y-1">
-                                    <span className="text-slate-400 block text-xs">سعر طن الفاتورة الموحد:</span>
-                                    <strong className="text-base font-black text-amber-300">{unitPrice.toLocaleString('en-US')} ج.م</strong>
-                                  </div>
-                                  <div className="rounded-xl border border-cyan-500/50 bg-cyan-950/40 p-3.5 space-y-1">
-                                    <span className="text-cyan-400 block text-xs">إجمالي القيمة المالية المستلمة:</span>
-                                    <strong className="text-base font-black text-cyan-300">{totalVal.toLocaleString('en-US')} ج.م</strong>
+                                  <div className="rounded-lg bg-emerald-950/50 p-2">
+                                    <span className="block text-xs text-emerald-400">المستلم</span>
+                                    <strong className="font-mono text-lg font-black text-emerald-300">{formatCleanQty(totalRec)} طن</strong>
                                   </div>
                                 </div>
                               </div>
                             );
                           })()
                         ) : (
-                          <>
-                            <h4 className="text-xs sm:text-sm font-black text-emerald-300 flex items-center gap-2">
-                              <span>{receipt.receipt_type === 'REQUESTER_OFFICE' ? '🏢' : '🏗️'}</span>
-                              <span>
-                                {receipt.receipt_type === 'REQUESTER_OFFICE'
-                                  ? `بنود المستلزمات المكتبية المطلوب استلامها وفحصها (${receipt.items?.length || 0} صنف):`
-                                  : `بنود الاستلام المطلوب فحصها هندسياً (${receipt.items?.length || 0} بنود):`}
-                              </span>
-                            </h4>
-
-                        <SiteReceiptItemsTable
-                          receipt={receipt}
-                          quantities={quantities}
-                          onQuantityChange={(key, val) =>
-                            setQuantities((prev) => ({ ...prev, [key]: val }))
-                          }
-                          itemNotes={itemNotes}
-                          onItemNoteChange={(key, val) =>
-                            setItemNotes((prev) => ({ ...prev, [key]: val }))
-                          }
-                          isReviewer={isReviewer}
-                        />
-                      </>
-                    )}
-
-                        {/* General Site Notes */}
-                        <div className="space-y-1.5 pt-2">
-                          <label className="text-xs sm:text-sm font-bold text-slate-300">
-                            {receipt.receipt_type === 'REQUESTER_OFFICE'
-                              ? 'ملاحظات المستلم الفعلي (اختياري):'
-                              : isReviewer
-                              ? 'ملاحظات واعتماد المراجع الفني / رئيس القسم (اختياري):'
-                              : 'ملاحظات واعتماد مهندس الموقع (اختياري):'}
-                          </label>
-                          <textarea
-                            rows={2}
-                            value={notes[receipt.id] || ''}
-                            onChange={(e) => setNotes({ ...notes, [receipt.id]: e.target.value })}
-                            placeholder={
-                              receipt.receipt_type === 'REQUESTER_OFFICE'
-                                ? 'ملاحظاتك على استلام وفحص المستلزمات المكتبية...'
-                                : isReviewer
-                                ? 'ملاحظات المراجع الفني على استلام وفحص ومطابقة المواد...'
-                                : 'ملاحظات مهندس الموقع على استلام وفحص المواد بالموقع...'
-                            }
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs sm:text-sm text-slate-100 focus:border-cyan-400 focus:outline-none"
+                          <SiteReceiptItemCards
+                            receipt={receipt}
+                            quantities={quantities}
+                            onQuantityChange={(key, val) => setQuantities((prev) => ({ ...prev, [key]: val }))}
+                            itemNotes={itemNotes}
+                            onItemNoteChange={(key, val) => setItemNotes((prev) => ({ ...prev, [key]: val }))}
                           />
-                        </div>
+                        )}
 
-                        {/* Big Submit Button */}
-                        <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-center gap-3">
+                        <textarea
+                          rows={2}
+                          value={notes[receipt.id] || ''}
+                          onChange={(e) => setNotes({ ...notes, [receipt.id]: e.target.value })}
+                          placeholder="ملاحظات (اختياري)"
+                          aria-label="ملاحظات"
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100 focus:border-cyan-400 focus:outline-none"
+                        />
+
+                        <div className="space-y-2">
                           <Button
                             variant="success"
                             size="lg"
                             isLoading={isSavingThis}
                             onClick={() => approveReceipt(receipt)}
-                            className="flex-1 w-full font-black text-base sm:text-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 py-3.5 rounded-2xl shadow-xl shadow-emerald-950/60 flex items-center justify-center gap-2 cursor-pointer"
+                            className="w-full font-black text-base bg-emerald-500 hover:bg-emerald-400 text-slate-950 py-3.5 rounded-2xl flex items-center justify-center gap-2 cursor-pointer"
                           >
-                            <span>✓</span>{' '}
-                            {receipt.receipt_type === 'REQUESTER_OFFICE'
-                              ? 'اعتماد استلام المستلزمات المكتبية وإرساله للمشتريات لإصدار أمر الشراء الفعلي'
-                              : isReviewer
-                              ? 'اعتماد ومطابقة إذن الاستلام وإرساله للمشتريات لإصدار أمر الشراء الفعلي'
-                              : 'اعتماد مطابق للموقع وإرسال للمشتريات لإصدار أمر الشراء الفعلي'}
+                            ✅ اعتماد الاستلام
                           </Button>
                           <Button
                             variant="secondary"
                             size="lg"
                             isLoading={isSavingThis}
                             onClick={() => handleCancelReceipt(receipt)}
-                            className="w-full sm:w-auto font-bold text-xs sm:text-sm border border-red-500/50 hover:bg-red-950/50 text-red-300 py-3.5 px-5 rounded-2xl flex items-center justify-center gap-1.5 cursor-pointer"
-                            title="إلغاء هذا الإذن المعلق وإعادة أمر الشراء للمخزن لإعادة استلامه كوزنة مجمعة"
+                            className="w-full font-bold text-sm border border-red-500/50 hover:bg-red-950/50 text-red-300 py-2.5 rounded-2xl flex items-center justify-center gap-1.5 cursor-pointer"
+                            title="إلغاء هذا الإذن وإعادة أمر الشراء للمخزن"
                           >
-                            <span>↩️</span>
-                            <span>إلغاء وإعادة للمخزن</span>
+                            ↩️ إرجاع للمخزن
                           </Button>
                         </div>
                       </div>
