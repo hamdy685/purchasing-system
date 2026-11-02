@@ -997,9 +997,9 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
                                   </p>
                                 )}
 
-                                {(item.pr_item?.quantity ?? item.quantity) != null && (
+                                {(item.quantity ?? item.pr_item?.quantity) != null && (
                                   <p className="text-xs text-slate-400">
-                                    المطلوب: <strong className="font-mono text-slate-100">{formatCleanQty(Number(item.pr_item?.quantity ?? item.quantity))} {getUnitLabel(item.pr_item?.uom || item.uom || '')}</strong>
+                                    المطلوب: <strong className="font-mono text-slate-100">{formatCleanQty(Number(item.quantity ?? item.pr_item?.quantity))} {getUnitLabel(item.uom || item.pr_item?.uom || '')}</strong>
                                   </p>
                                 )}
 
