@@ -93,7 +93,12 @@ export const EditPurchaseOrderPage: React.FC = () => {
         getSuppliersApi()
       ]);
       setPo(poData);
-      setSuppliers(sups || []);
+      // The order's own suppliers stay selectable even if the list does not carry them
+      // (inactive supplier), so the selects never show an empty or wrong name.
+      const listed = new Set((sups || []).map((s) => s.id));
+      const ownSuppliers = [poData?.supplier, ...((poData?.items || []).map((it: any) => it.supplier))]
+        .filter((s: any) => s?.id && !listed.has(s.id) && listed.add(s.id));
+      setSuppliers([...(sups || []), ...ownSuppliers]);
 
       if (poData) {
         setSupplierId(String(poData.supplier_id || ''));
@@ -1092,7 +1097,8 @@ export const EditPurchaseOrderPage: React.FC = () => {
                           className="w-36 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:border-cyan-500 font-medium cursor-pointer truncate"
                           title="تحديد المورد الفعلي لهذا البند"
                         >
-                          {suppliers.map((s) => (
+                          <option value="">— اختر المورد —</option>
+                        {suppliers.map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.company_name}
                             </option>
@@ -1344,6 +1350,7 @@ export const EditPurchaseOrderPage: React.FC = () => {
                         onChange={(e) => handleItemFieldChange(idx, 'supplier_id', e.target.value ? Number(e.target.value) : null)}
                         className="w-full bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-xs text-slate-200 truncate cursor-pointer"
                       >
+                        <option value="">— اختر المورد —</option>
                         {suppliers.map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.company_name}

@@ -15,8 +15,18 @@ export interface SupplierPayload {
   is_active?: boolean;
 }
 
-export const getSuppliersApi = async () =>
-  (await cachedGetData<{ data: المورد[] }>('/procurement/suppliers-manage')).data;
+type SupplierPage = { data: المورد[]; meta?: { last_page?: number } };
+
+// Every supplier, not just the server's first page: a supplier missing from the list
+// makes a select show an empty or wrong name for an order that already has it.
+export const getSuppliersApi = async (): Promise<المورد[]> => {
+  const page = (n: number) =>
+    cachedGetData<SupplierPage>('/procurement/suppliers-manage', { params: { per_page: 200, page: n } });
+  const first = await page(1);
+  const lastPage = first.meta?.last_page ?? 1;
+  const rest = await Promise.all(Array.from({ length: Math.max(lastPage - 1, 0) }, (_, i) => page(i + 2)));
+  return [first, ...rest].flatMap((p) => p.data || []);
+};
 
 export const getSupplierApi = async (id: number) =>
   (await apiClient.get<{ data: المورد }>(`/procurement/suppliers-manage/${id}`)).data.data;
