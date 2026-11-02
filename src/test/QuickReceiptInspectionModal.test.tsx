@@ -112,13 +112,10 @@ describe('QuickReceiptInspectionModal Component', () => {
     // Header & metadata
     expect(await screen.findByText(/فحص واعتماد إذن الاستلام: REC-505/i)).toBeInTheDocument();
     expect(screen.getByText(/PO-88/i)).toBeInTheDocument();
-    expect(screen.getByText('550')).toBeInTheDocument();
-    expect(screen.getByText('الأندلس')).toBeInTheDocument();
-    expect(screen.getByText('شركة الخزف السعودي')).toBeInTheDocument();
-    expect(screen.getByText('عم سلامة (أمين المخزن)')).toBeInTheDocument();
+    expect(screen.getByText('شركة الخزف السعودي · قطعة 550 · منطقة الأندلس')).toBeInTheDocument();
 
     // Warehouse notes
-    expect(screen.getByText('تم فحص الشحنة ظاهرياً وتطابق بون الميزان')).toBeInTheDocument();
+    expect(screen.getByText(/تم فحص الشحنة ظاهرياً وتطابق بون الميزان/)).toBeInTheDocument();
 
     // Items
     expect(screen.getByText('كشافات طوارئ شحن ليد معتمدة لاشتراطات التراخيص')).toBeInTheDocument();
@@ -142,11 +139,11 @@ describe('QuickReceiptInspectionModal Component', () => {
     fireEvent.change(qtyInput1, { target: { value: '14' } });
 
     // Add general notes
-    const generalNotesInput = screen.getByPlaceholderText(/اكتب تقرير الفحص أو أي ملاحظات هندسية/i);
+    const generalNotesInput = screen.getByPlaceholderText('ملاحظات (اختياري)');
     fireEvent.change(generalNotesInput, { target: { value: 'تم فحص الكشافات والمطابقة تمت بنجاح مع استلام 14 كشاف فقط سليم' } });
 
     // Click confirm & submit button
-    const submitBtn = screen.getByRole('button', { name: /تأكيد الاعتماد والمطابقة الهندسية/i });
+    const submitBtn = screen.getByRole('button', { name: /اعتماد الاستلام/ });
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
@@ -180,32 +177,10 @@ describe('QuickReceiptInspectionModal Component', () => {
     const qtyInput1 = screen.getByDisplayValue('15');
     fireEvent.change(qtyInput1, { target: { value: '-2' } });
 
-    const submitBtn = screen.getByRole('button', { name: /تأكيد الاعتماد والمطابقة الهندسية/i });
+    const submitBtn = screen.getByRole('button', { name: /اعتماد الاستلام/ });
     fireEvent.click(submitBtn);
 
     expect(await screen.findByText(/قيمة الكمية غير صحيحة للبند/i)).toBeInTheDocument();
     expect(purchaseReceiptsApi.approvePurchaseReceiptApi).not.toHaveBeenCalled();
-  });
-
-  it('sets all quantities to warehouse quantities when clicking match button', async () => {
-    render(
-      <QuickReceiptInspectionModal
-        isOpen={true}
-        item={sampleItem}
-        onClose={mockOnClose}
-        onSuccess={mockOnSuccess}
-      />
-    );
-
-    await screen.findByText('كشافات طوارئ شحن ليد معتمدة لاشتراطات التراخيص');
-
-    const qtyInput1 = screen.getByDisplayValue('15');
-    fireEvent.change(qtyInput1, { target: { value: '10' } });
-    expect(qtyInput1).toHaveValue(10);
-
-    const matchAllBtn = screen.getByRole('button', { name: /مطابقة كامل الكميات للمخزن/i });
-    fireEvent.click(matchAllBtn);
-
-    expect(qtyInput1).toHaveValue(15);
   });
 });

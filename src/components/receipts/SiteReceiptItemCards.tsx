@@ -10,6 +10,8 @@ export interface SiteReceiptItemCardsProps {
   onQuantityChange: (key: string, value: string) => void;
   itemNotes: Record<string, string>;
   onItemNoteChange: (key: string, value: string) => void;
+  /** State key for one line; defaults to `receipt-{receiptId}-{itemId}` */
+  keyOf?: (itemId: number) => string;
 }
 
 /**
@@ -22,6 +24,7 @@ export const SiteReceiptItemCards: React.FC<SiteReceiptItemCardsProps> = ({
   onQuantityChange,
   itemNotes,
   onItemNoteChange,
+  keyOf,
 }) => {
   const [openNotes, setOpenNotes] = useState<Record<number, boolean>>({});
   const items = receipt.items || [];
@@ -35,7 +38,7 @@ export const SiteReceiptItemCards: React.FC<SiteReceiptItemCardsProps> = ({
   return (
     <div className="space-y-3">
       {items.map((item) => {
-        const key = `receipt-${receipt.id}-${item.id}`;
+        const key = keyOf ? keyOf(item.id) : `receipt-${receipt.id}-${item.id}`;
         const poItem = item.purchase_order_item;
         const prItem = poItem?.pr_item;
         const name = poItem?.item_description || poItem?.item?.name || 'بند استلام';
