@@ -56,7 +56,7 @@ const renderWarehouse = async () => {
 };
 
 const submit = () => {
-  fireEvent.click(screen.getByText(/تأكيد واعتماد الاستلام النهائي للموقع/));
+  fireEvent.click(screen.getByRole('button', { name: /تأكيد الاستلام/ }));
 };
 
 describe('PurchaseReceiptPage - consolidated "حديد" weighing ticket', () => {

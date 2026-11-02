@@ -6,6 +6,7 @@ import { TableSkeleton } from '../../components/ui/StateFeedback';
 import ErrorMessage from '../../components/ErrorMessage';
 import { parseApiError } from '../../utils/apiError';
 import { getUnitLabel } from '../../utils/units';
+import { formatCleanQty } from '../../utils/numberFormat';
 import TableFilterBar from '../../components/ui/TableFilterBar';
 import { getDefaultDateFrom, getTodayInputDate, isDefaultTodayRange } from '../../utils/dateFilters';
 import {
@@ -519,46 +520,31 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* ── Page Header Banner ── */}
+      {/* ── Page Header Banner (site engineers only; the layout already names the warehouse page) ── */}
+      {mode !== 'warehouse' && (
       <div
-        className={`rounded-2xl border-2 p-4 sm:p-6 shadow-xl space-y-3 ${
-          mode === 'warehouse'
-            ? 'border-amber-500/40 bg-gradient-to-r from-slate-900 via-amber-950/20 to-slate-900'
-            : 'border-emerald-500/40 bg-gradient-to-r from-slate-900 via-emerald-950/20 to-slate-900'
-        }`}
+        className="rounded-2xl border-2 p-4 sm:p-6 shadow-xl space-y-3 border-emerald-500/40 bg-gradient-to-r from-slate-900 via-emerald-950/20 to-slate-900"
       >
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-start sm:items-center gap-3">
             <span
-              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-2xl font-black shadow-inner ${
-                mode === 'warehouse'
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-              }`}
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-2xl font-black shadow-inner bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
             >
-              {mode === 'warehouse' ? '📦' : '🏗️'}
+              🏗️
             </span>
             <div>
               <h1 className="text-lg sm:text-xl font-black text-slate-100 flex items-center gap-2.5 flex-wrap">
-                {mode === 'warehouse'
-                  ? 'مهام وأرشيف استلام المواد بالمخزن'
-                  : isReviewer
+                {isReviewer
                   ? 'إذن استلام المواد — فحص واعتماد الاستلام الميداني'
                   : 'إذن استلام المواد — فحص واعتماد الاستلام'}
-                {(mode === 'warehouse' ? orders.length : receipts.length) > 0 && (
-                  <span
-                    className={`rounded-full px-3 py-0.5 text-xs font-black ${
-                      mode === 'warehouse' ? 'bg-amber-500 text-slate-950' : 'bg-emerald-500 text-slate-950'
-                    }`}
-                  >
-                    {(mode === 'warehouse' ? orders.length : receipts.length)} أمر بانتظار الفحص
+                {receipts.length > 0 && (
+                  <span className="rounded-full px-3 py-0.5 text-xs font-black bg-emerald-500 text-slate-950">
+                    {receipts.length} أمر بانتظار الفحص
                   </span>
                 )}
               </h1>
               <p className="text-xs sm:text-sm text-slate-400 mt-1">
-                {mode === 'warehouse'
-                  ? 'قم بفحص بضاعة الموردين ومطابقة الأصناف والمواصفات، وسجل الكميات المستلمة أو راجع أرشيف الاستلامات المعتمدة.'
-                  : isReviewer
+                {isReviewer
                   ? 'راجع استلام المخزن وافحص المواد فنياً وهندسياً للتأكد من مطابقتها قبل الاعتماد النهائي وإرسالها للمشتريات لإصدار أمر الشراء الفعلي.'
                   : 'راجع استلام المخزن وافحص المواد هندسياً وفنياً في الموقع للتأكد من مطابقتها قبل الاعتماد النهائي وإرسالها للمشتريات لإصدار أمر الشراء الفعلي.'}
               </p>
@@ -566,6 +552,7 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
           </div>
         </div>
       </div>
+      )}
 
       {successMessage && (
         <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/50 p-4 text-sm font-bold text-emerald-300 flex items-center justify-between animate-fade-in">
@@ -690,123 +677,38 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
                   return (
                     <div
                       key={order.id}
-                      className={`p-5 sm:p-7 space-y-6 border-3 ${theme.border} ${theme.cardBg} shadow-2xl rounded-3xl transition-all`}
+                      className={`p-3 sm:p-5 space-y-3 border-2 ${theme.border} ${theme.cardBg} shadow-xl rounded-2xl transition-all`}
                     >
-                      {/* 1. Header: Big Distinct Color Ribbon & Supplier Info */}
-                      <div className={`rounded-2xl border-2 ${theme.headerBg} p-4 sm:p-5 space-y-4`}>
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex items-center gap-2.5 flex-wrap">
-                            <span className={`px-4 py-1.5 rounded-xl font-black text-sm sm:text-base border-2 ${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder} shadow-md flex items-center gap-1.5`}>
-                              <span>{theme.icon}</span>
-                              <span>{theme.colorTitle}</span>
-                            </span>
+                      {/* 1. Header: order, supplier and location in two lines */}
+                      {(() => {
+                        const orderParcel =
+                          order.purchase_request?.parcel_reference ||
+                          order.items?.find((i) => i.item_reference || i.pr_item?.item_reference)?.item_reference ||
+                          order.items?.find((i) => i.item_reference || i.pr_item?.item_reference)?.pr_item?.item_reference ||
+                          null;
+                        const orderRegion =
+                          order.purchase_request?.region ||
+                          order.items?.find((i) => i.region || i.pr_item?.region)?.region ||
+                          order.items?.find((i) => i.region || i.pr_item?.region)?.pr_item?.region ||
+                          null;
+                        const isSupplementOrder = Boolean(order.is_supplementary || order.items?.some((i) => i.is_supplementary) || order.notes?.includes('كمالة'));
 
-                            <span className="font-mono text-base sm:text-lg font-black text-white bg-slate-950 border border-slate-700 px-3.5 py-1.5 rounded-xl shadow-inner">
-                              أمر شراء #{order.po_number}
-                            </span>
-
-                            {order.purchase_request && (
-                              <span className="text-xs sm:text-sm font-bold text-slate-300 bg-slate-900 border border-slate-700 px-3 py-1 rounded-lg">
-                                طلب توريد #{order.purchase_request.request_number}
-                              </span>
-                            )}
-                            {Boolean(order.is_supplementary || order.items?.some((i) => i.is_supplementary) || order.notes?.includes('كمالة')) && (
-                              <span className="text-xs sm:text-sm font-black text-amber-300 bg-amber-950/90 border border-amber-500/80 px-3 py-1 rounded-xl flex items-center gap-1.5 shadow-md">
-                                <span>⚡</span>
-                                <span>طلب كمالة معتمد</span>
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-950/80 border border-amber-600/70 text-amber-300 text-xs sm:text-sm font-black shadow-sm">
-                              <span>🔒</span>
-                              <span>استلام أعمى: يُسجل المستلم الكميات الفعلية بعد انتهاء الصبة والتوريد</span>
-                            </span>
-
-                            {!isLockedBySupplement && (
-                              <Link
-                                to="/requests/supplements"
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-500/60 hover:border-amber-400 text-amber-300 text-xs sm:text-sm font-black transition-all shadow-sm"
-                                title="إنشاء طلب كمالة (كميات إضافية) لهذا الطلب قبل إتمام الاستلام"
-                              >
-                                <span>➕</span>
-                                <span>طلب كمالة</span>
-                              </Link>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Large Clear Info Callouts */}
-                        {(() => {
-                          const orderParcel =
-                            order.purchase_request?.parcel_reference ||
-                            order.items?.find((i) => i.item_reference || i.pr_item?.item_reference)?.item_reference ||
-                            order.items?.find((i) => i.item_reference || i.pr_item?.item_reference)?.pr_item?.item_reference ||
-                            null;
-
-                          const orderRegion =
-                            order.purchase_request?.region ||
-                            order.items?.find((i) => i.region || i.pr_item?.region)?.region ||
-                            order.items?.find((i) => i.region || i.pr_item?.region)?.pr_item?.region ||
-                            null;
-
-                          return (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm sm:text-base pt-1">
-                              <div className="flex items-center gap-3 text-slate-100 bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800">
-                                <span className="text-3xl shrink-0">
-                                  {order.supplier?.company_name === 'المخزن الداخلي' ? '🏛️' : '🏢'}
-                                </span>
-                                <div>
-                                  <span className="text-slate-400 block text-xs font-bold">المورد صاحب البضاعة:</span>
-                                  <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                                    <span className="font-black text-base sm:text-lg text-white block">
-                                      {order.supplier?.company_name || 'مورد غير محدد'}
-                                    </span>
-                                    {order.supplier?.company_name === 'المخزن الداخلي' && (
-                                      <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-600/70 shadow-sm">
-                                        صرف من رصيد الشركة (سعر 0)
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-3 text-slate-100 bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800">
-                                <span className="text-3xl shrink-0">📍</span>
-                                <div>
-                                  <span className="text-slate-400 block text-xs font-bold">المشروع / موقع التوريد:</span>
-                                  <span className="font-black text-base sm:text-lg text-cyan-300 block mt-0.5">
-                                    {order.purchase_request?.project_name || order.purchase_request?.department?.name || 'المخزن الرئيسي'}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Parcel Reference Callout */}
-                              <div className="flex items-center gap-3 text-slate-100 bg-slate-950/80 p-3.5 rounded-2xl border border-cyan-800/70 shadow-sm">
-                                <span className="text-3xl shrink-0">🏷️</span>
-                                <div>
-                                  <span className="text-cyan-400 block text-xs font-bold">رقم قطعة الأرض:</span>
-                                  <span className="font-mono font-black text-base sm:text-lg text-cyan-200 block mt-0.5">
-                                    {orderParcel || 'غير مسجل'}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Region Callout */}
-                              <div className="flex items-center gap-3 text-slate-100 bg-slate-950/80 p-3.5 rounded-2xl border border-amber-800/70 shadow-sm">
-                                <span className="text-3xl shrink-0">📍</span>
-                                <div>
-                                  <span className="text-amber-400 block text-xs font-bold">المنطقة الجغرافية:</span>
-                                  <span className="font-black text-base sm:text-lg text-amber-200 block mt-0.5">
-                                    {orderRegion || 'غير مسجلة'}
-                                  </span>
-                                </div>
-                              </div>
+                        return (
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-base sm:text-lg font-black text-white">أمر شراء <span className="font-mono">#{order.po_number}</span></span>
+                              {isSupplementOrder && (
+                                <span className="rounded-lg border border-amber-500/60 bg-amber-950/80 px-2 py-0.5 text-[11px] font-black text-amber-300">كمالة</span>
+                              )}
                             </div>
-                          );
-                        })()}
-                      </div>
+                            <p className="text-sm text-slate-300">
+                              <strong className="text-white">{order.supplier?.company_name || 'مورد غير محدد'}</strong>
+                              {orderParcel && <> · قطعة <span className="font-mono text-cyan-300">{orderParcel}</span></>}
+                              {orderRegion && <> · منطقة <span className="text-amber-300">{orderRegion}</span></>}
+                            </p>
+                          </div>
+                        );
+                      })()}
 
                       {/* Supplement In-Progress Warning Callout */}
                       {isLockedBySupplement && (
@@ -989,8 +891,7 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
                           <>
                             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                               <h4 className="text-sm sm:text-base font-black text-slate-100 flex items-center gap-2">
-                                <span>📦</span>
-                                <span>الأصناف المطلوب استلامها في هذا الإذن ({order.items?.length || 0} صنف):</span>
+                                <span>الأصناف ({order.items?.length || 0})</span>
                               </h4>
                             </div>
 
@@ -1061,16 +962,13 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
                             return (
                               <div
                                 key={item.id}
-                                className={`rounded-2xl border-2 ${theme.itemBorder} bg-slate-950/90 p-4 sm:p-5 space-y-4 shadow-xl`}
+                                className={`rounded-xl border ${theme.itemBorder} bg-slate-950/90 p-3 space-y-2.5`}
                               >
                                 {/* Item Title & Number */}
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="space-y-1 flex-1">
                                     <div className="flex items-center gap-2 flex-wrap">
-                                      <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${theme.badgeBg} ${theme.badgeText} font-black text-base shrink-0 shadow-md`}>
-                                        {idx + 1}
-                                      </span>
-                                      <h4 className="text-base sm:text-xl font-black text-white flex items-center gap-2 flex-wrap">
+                                      <h4 className="text-base sm:text-lg font-black text-white flex items-center gap-2 flex-wrap">
                                         <span>{item.item_description || item.item?.name}</span>
                                         <SupplementItemBadge
                                           isSupplementary={item.is_supplementary}
@@ -1085,126 +983,43 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
                                       </h4>
                                     </div>
                                     {item.specifications && (
-                                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed pr-10">
+                                      <p className="text-xs text-slate-400 leading-relaxed">
                                         المواصفات: <strong className="text-slate-100">{item.specifications}</strong>
                                       </p>
                                     )}
                                   </div>
                                 </div>
 
-                                {/* Plot & Region Badges on Item */}
-                                {(itemParcel || itemRegion) && (
-                                  <div className="flex items-center gap-2 flex-wrap text-xs sm:text-sm">
-                                    {itemParcel && (
-                                      <span className="inline-flex items-center gap-1.5 font-mono text-cyan-200 bg-cyan-950 border border-cyan-700/80 px-3 py-1 rounded-xl font-black shadow-sm">
-                                        <span>🏷️</span> قطعة الأرض: {itemParcel}
-                                      </span>
-                                    )}
-                                    {itemRegion && (
-                                      <span className="inline-flex items-center gap-1.5 text-amber-200 bg-amber-950 border border-amber-700/80 px-3 py-1 rounded-xl font-black shadow-sm">
-                                        <span>📍</span> المنطقة: {itemRegion}
-                                      </span>
-                                    )}
-                                  </div>
+                                {/* Plot & region only when this line differs from the order header */}
+                                {((itemParcel && itemParcel !== order.purchase_request?.parcel_reference) || (itemRegion && itemRegion !== order.purchase_request?.region)) && (
+                                  <p className="text-xs text-slate-400">
+                                    قطعة <span className="font-mono text-cyan-300">{itemParcel || '—'}</span> · منطقة <span className="text-amber-300">{itemRegion || '—'}</span>
+                                  </p>
                                 )}
 
-                                {/* Blind Receiving Callout (Ordered quantity is hidden for audit accuracy) */}
-                                <div className="rounded-2xl border border-slate-700/70 bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 p-3.5 flex items-center gap-3 shadow-md">
-                                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300 text-lg border border-amber-500/40 shrink-0">
-                                    📝
-                                  </span>
-                                  <div className="flex-1">
-                                    <span className="text-xs text-slate-300 block">
-                                      الوحدة المطلوبة للاستلام: <strong className="text-white font-mono text-sm">{getUnitLabel(item.pr_item?.uom || item.uom || '')}</strong>
-                                    </span>
-                                    {item.pr_item?.quantity && (
-                                      <span className="text-xs text-cyan-300 font-bold block mt-0.5">
-                                        الكمية المطلوبة بالموقع: <strong className="font-mono text-white text-sm">{item.pr_item.quantity} {getUnitLabel(item.pr_item?.uom || item.uom || '')}</strong>
-                                      </span>
-                                    )}
-                                    <span className="text-[11px] text-amber-300 font-bold block mt-0.5">
-                                      ⚠️ يرجى إدخال الكمية المستلمة فعلياً بوحدة ({getUnitLabel(item.pr_item?.uom || item.uom || '')}) كما طلبها مهندس الموقع.
-                                    </span>
-                                  </div>
-                                </div>
+                                {(item.pr_item?.quantity ?? item.quantity) != null && (
+                                  <p className="text-xs text-slate-400">
+                                    المطلوب: <strong className="font-mono text-slate-100">{formatCleanQty(Number(item.pr_item?.quantity ?? item.quantity))} {getUnitLabel(item.pr_item?.uom || item.uom || '')}</strong>
+                                  </p>
+                                )}
 
-                                {/* Received Quantity Input Section */}
-                                <div className="rounded-2xl border-2 border-emerald-500/80 bg-emerald-950/30 p-4 sm:p-5 space-y-3 shadow-inner">
-                                  <div className="flex items-center justify-between">
-                                    <label htmlFor={`qty-${key}`} className="text-sm sm:text-base font-black text-emerald-300 flex items-center gap-2">
-                                      <span className="text-lg">📥</span>
-                                      <span>الكمية المستلمة فعلياً في الموقع بعد انتهاء الصبة:</span>
-                                    </label>
-                                    <span className="text-xs font-bold text-emerald-300 bg-emerald-950 border border-emerald-500/50 px-2.5 py-0.5 rounded-full">
-                                      اكتب الرقم هنا 👇
-                                    </span>
-                                  </div>
-
-                                  <div className="space-y-2.5">
-                                    <div className="relative flex items-center">
-                                      <input
-                                        id={`qty-${key}`}
-                                        type="number"
-                                        min="0"
-                                        step="any"
-                                        placeholder="اكتب الكمية المستلمة بالأرقام..."
-                                        value={val}
-                                        onChange={(e) => setQuantities({ ...quantities, [key]: e.target.value })}
-                                        className="w-full h-14 rounded-2xl border-2 border-emerald-400 bg-slate-900/95 pl-24 pr-4 text-xl sm:text-2xl font-black text-emerald-200 placeholder:text-slate-500 placeholder:text-sm sm:placeholder:text-base placeholder:font-normal focus:border-emerald-300 focus:bg-slate-900 focus:ring-4 focus:ring-emerald-500/30 focus:outline-none transition-all shadow-inner"
-                                      />
-                                      {/* Unit badge pinned inside input */}
-                                      <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-emerald-950/90 border border-emerald-500/50 px-3 py-1.5 rounded-xl pointer-events-none">
-                                        <span className="text-xs sm:text-sm font-black text-emerald-300">
-                                          {getUnitLabel(item.pr_item?.uom || item.uom || '')}
-                                        </span>
-                                      </div>
-                                    </div>
-
-                                    {/* Action Buttons: Clearly labeled pill buttons, not input boxes */}
-                                    <div className="flex items-center justify-between pt-1">
-                                      <span className="text-[11px] text-slate-400 font-medium">أزرار ضغط سريعة (ليست للكتابة):</span>
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          type="button"
-                                          tabIndex={-1}
-                                          onClick={() => {
-                                            const next = Math.max(0, numVal - 1);
-                                            setQuantities({ ...quantities, [key]: String(next) });
-                                          }}
-                                          className="h-8 px-3.5 rounded-full bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 border border-slate-600 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition select-none active:scale-95 shadow-sm"
-                                          title="إنقاص الكمية بمقدار 1"
-                                        >
-                                          <span className="text-sm font-black">-1</span>
-                                          <span>إنقاص</span>
-                                        </button>
-
-                                        <button
-                                          type="button"
-                                          tabIndex={-1}
-                                          onClick={() => {
-                                            const next = numVal + 1;
-                                            setQuantities({ ...quantities, [key]: String(next) });
-                                          }}
-                                          className="h-8 px-3.5 rounded-full bg-emerald-900/60 hover:bg-emerald-800/80 active:bg-emerald-700 text-emerald-200 border border-emerald-600/70 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition select-none active:scale-95 shadow-sm"
-                                          title="زيادة الكمية بمقدار 1"
-                                        >
-                                          <span className="text-sm font-black">+1</span>
-                                          <span>زيادة</span>
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Simple Notes */}
-                                <div className="pt-1">
+                                {/* Received quantity: one field with its unit */}
+                                <div className="relative flex items-center">
+                                  <label htmlFor={`qty-${key}`} className="sr-only">الكمية المستلمة</label>
                                   <input
-                                    type="text"
-                                    placeholder="أي ملاحظة على هذا الصنف (اختياري)..."
-                                    value={itemNotes[key] || ''}
-                                    onChange={(e) => setItemNotes({ ...itemNotes, [key]: e.target.value })}
-                                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2.5 text-xs sm:text-sm text-slate-200 focus:border-cyan-400 focus:outline-none"
+                                    id={`qty-${key}`}
+                                    type="number"
+                                    inputMode="decimal"
+                                    min="0"
+                                    step="any"
+                                    placeholder="الكمية المستلمة"
+                                    value={val}
+                                    onChange={(e) => setQuantities({ ...quantities, [key]: e.target.value })}
+                                    className="w-full h-14 rounded-xl border-2 border-emerald-500/80 bg-slate-900 pl-20 pr-4 text-xl font-black text-emerald-200 placeholder:text-sm placeholder:font-normal placeholder:text-slate-500 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/30 focus:outline-none"
                                   />
+                                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 rounded-lg border border-emerald-500/50 bg-emerald-950/90 px-2.5 py-1 text-xs font-black text-emerald-300">
+                                    {getUnitLabel(item.pr_item?.uom || item.uom || '')}
+                                  </span>
                                 </div>
                               </div>
                             );
@@ -1213,197 +1028,92 @@ export const PurchaseReceiptPage: React.FC<{ mode: ReceiptMode }> = ({ mode }) =
                       </>
                     )}
 
-                        {/* General Order Notes */}
-                        <div className="space-y-1.5 pt-2">
-                          <label className="text-xs sm:text-sm font-bold text-slate-300">ملاحظات عامة على الاستلام (اختياري):</label>
-                          <textarea
-                            rows={2}
-                            value={notes[order.id] || ''}
-                            onChange={(e) => setNotes({ ...notes, [order.id]: e.target.value })}
-                            placeholder="مثال: تم فحص البضاعة ومطابقة الأختام، البضاعة سليمة وبحالة جيدة..."
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs sm:text-sm text-slate-100 focus:border-cyan-400 focus:outline-none"
-                          />
-                        </div>
-
-                        {/* Actual Receiver in Site */}
-                        <div className="space-y-1.5 pt-2">
-                          <label className="text-xs sm:text-sm font-bold text-slate-300 flex items-center justify-between">
-                            <span>👤 المستلم الفعلي في الموقع (اختياري):</span>
-                            <span className="text-[11px] text-slate-400 font-normal">اسم الشخص أو المهندس الذي استلم الشحنة على الأرض</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={actualReceivers[order.id] || ''}
-                            onChange={(e) => setActualReceivers({ ...actualReceivers, [order.id]: e.target.value })}
-                            placeholder="مثال: م. أيمن ماهر / اسم المستلم الميداني..."
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs sm:text-sm text-slate-100 focus:border-cyan-400 focus:outline-none"
-                          />
-                        </div>
-
-                        {/* 3. Camera / Photo Attachment (Ultra Simple Big Button) */}
-                        <div className="rounded-2xl border-2 border-dashed border-cyan-500/70 bg-cyan-950/30 p-4 sm:p-5 space-y-4 shadow-lg">
-                          <div className="flex items-center justify-between flex-wrap gap-2">
-                            <div className="flex items-center gap-3">
-                              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500/20 text-cyan-300 text-3xl border border-cyan-500/40 shrink-0">
-                                📷
-                              </span>
-                              <div>
-                                <h5 className="text-sm sm:text-base font-black text-cyan-200 flex items-center gap-2">
-                                  <span>تصوير بون الميزان أو وزنة الحديد / بوليصة الاستلام</span>
-                                  <span className="text-xs font-bold text-amber-300 bg-amber-950/80 border border-amber-800/60 px-2 py-0.5 rounded-md">
-                                    (اختياري)
-                                  </span>
-                                </h5>
-                                <p className="text-xs text-slate-300 mt-0.5">
-                                  التقط صورة واضحة بالكاميرا ليراها مهندس الموقع والمحاسب مباشرة مع إذن الصرف.
-                                </p>
-                              </div>
-                            </div>
-                            {receiptPhotos[order.id] && (
-                              <button
-                                type="button"
-                                onClick={() => setReceiptPhotos((prev) => ({ ...prev, [order.id]: null }))}
-                                className="text-xs font-bold text-rose-300 hover:text-white bg-rose-950/90 border border-rose-700 px-3.5 py-1.5 rounded-xl cursor-pointer shadow-md"
-                              >
-                                ✕ حذف الصورة وإعادة التصوير
-                              </button>
-                            )}
+                        {/* Photo: take one or pick one, nothing else */}
+                        {receiptPhotos[order.id] ? (
+                          <div className="flex items-center gap-3 rounded-xl border border-emerald-500/60 bg-slate-950 p-2.5">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewPhotoUrl(receiptPhotos[order.id]!.base64)}
+                              className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-emerald-400 cursor-pointer"
+                              aria-label="تكبير الصورة"
+                            >
+                              <img src={receiptPhotos[order.id]!.base64} alt="صورة الاستلام" className="h-full w-full object-cover" />
+                            </button>
+                            <span className="flex-1 text-sm font-bold text-emerald-300">✅ تم إرفاق الصورة</span>
+                            <button
+                              type="button"
+                              onClick={() => setReceiptPhotos((prev) => ({ ...prev, [order.id]: null }))}
+                              className="shrink-0 rounded-lg border border-rose-700 bg-rose-950/80 px-3 py-2 text-xs font-bold text-rose-300 cursor-pointer"
+                            >
+                              ✕ حذف
+                            </button>
                           </div>
-
-                          {receiptPhotos[order.id] ? (
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-slate-950 p-4 rounded-2xl border-2 border-emerald-500/80 shadow-xl">
-                              <div
-                                onClick={() => setPreviewPhotoUrl(receiptPhotos[order.id]!.base64)}
-                                className="relative h-28 w-28 sm:h-32 sm:w-32 rounded-2xl overflow-hidden border-2 border-emerald-400 cursor-pointer group shrink-0 shadow-lg"
-                              >
-                                <img
-                                  src={receiptPhotos[order.id]!.base64}
-                                  alt="صورة الاستلام"
-                                  className="h-full w-full object-cover group-hover:scale-105 transition-transform"
-                                />
-                                <div className="absolute inset-0 bg-slate-950/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <span className="text-xs font-black text-white bg-slate-900/90 px-2.5 py-1 rounded-lg">🔍 تكبير</span>
-                                </div>
-                              </div>
-                              <div className="space-y-2 text-xs flex-1">
-                                <div className="font-black text-emerald-400 text-base flex items-center gap-2">
-                                  <span>✅</span>
-                                  <span>تم التقاط صورة بون الميزان بنجاح!</span>
-                                </div>
-                                <p className="text-slate-300 text-xs sm:text-sm">
-                                  الملف المختار: {receiptPhotos[order.id]!.name}
-                                </p>
-                                <div className="p-2.5 rounded-xl bg-slate-900/90 border border-emerald-500/30 text-xs space-y-1 text-right">
-                                  <div className="text-emerald-300 font-bold flex items-center gap-1.5">
-                                    <span>🏷️</span>
-                                    <span>بيانات التسمية الموحدة لـ Google Drive:</span>
-                                  </div>
-                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-slate-300 text-[11px] pt-1">
-                                    <div><span className="text-slate-400">القطعة:</span> {order.purchase_request?.parcel_reference || (order.purchase_request as any)?.land_parcel?.parcel_reference || order.items?.[0]?.item_reference || 'غير محدد'}</div>
-                                    <div><span className="text-slate-400">المنطقة:</span> {order.purchase_request?.region || order.items?.[0]?.region || 'غير محدد'}</div>
-                                    <div><span className="text-slate-400">البند:</span> {order.items?.length === 1 ? (order.items[0].item?.name || order.items[0].item_description) : 'متعدد البنود'}</div>
-                                    <div><span className="text-slate-400">المورد:</span> {order.supplier?.company_name || (order.supplier as any)?.name || 'غير محدد'}</div>
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setPreviewPhotoUrl(receiptPhotos[order.id]!.base64)}
-                                  className="text-xs sm:text-sm font-black text-cyan-400 hover:text-cyan-300 underline inline-flex items-center gap-1 cursor-pointer pt-1"
-                                >
-                                  <span>👁️</span> اضغط هنا لمعاينة الصورة بالحجم الكامل المكبر
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
-                              {/* Option 1: Direct Native Camera Launch on Phone/Tablet */}
-                              <label
-                                htmlFor={`receipt-camera-capture-${order.id}`}
-                                className="flex items-center justify-center gap-3.5 p-4 sm:p-5 rounded-2xl border-2 border-cyan-400 hover:border-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/70 cursor-pointer transition-all text-right group shadow-lg active:scale-98"
-                              >
-                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-cyan-500/20 text-cyan-300 text-3xl border border-cyan-400 group-hover:scale-110 transition-transform">
-                                  📸
-                                </div>
-                                <div className="space-y-1 flex-1">
-                                  <span className="text-sm sm:text-base font-black text-cyan-100 group-hover:text-white block">
-                                    فتح الكاميرا والتقاط صورة الميزان فوراً
-                                  </span>
-                                  <span className="block text-xs text-slate-300">
-                                    تشغيل كاميرا الهاتف مباشرة وتصوير الورقة
-                                  </span>
-                                </div>
-                                <input
-                                  id={`receipt-camera-capture-${order.id}`}
-                                  type="file"
-                                  accept="image/*"
-                                  capture="environment"
-                                  className="hidden"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) handlePhotoCapture(order.id, file);
-                                    e.target.value = '';
-                                  }}
-                                />
-                              </label>
-
-                              {/* Option 2: Gallery / Files Picker */}
-                              <label
-                                htmlFor={`receipt-gallery-picker-${order.id}`}
-                                className="flex items-center justify-center gap-3.5 p-4 sm:p-5 rounded-2xl border-2 border-slate-700 hover:border-cyan-400 bg-slate-900/80 hover:bg-slate-900 cursor-pointer transition-all text-right group shadow-lg active:scale-98"
-                              >
-                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-800 text-slate-300 text-3xl border border-slate-700 group-hover:scale-110 transition-transform">
-                                  📁
-                                </div>
-                                <div className="space-y-1 flex-1">
-                                  <span className="text-sm sm:text-base font-black text-slate-200 group-hover:text-cyan-300 block">
-                                    اختيار صورة من الهاتف أو الملفات
-                                  </span>
-                                  <span className="block text-xs text-slate-400">
-                                    تحميل صورة تم التقاطها مسبقاً
-                                  </span>
-                                </div>
-                                <input
-                                  id={`receipt-gallery-picker-${order.id}`}
-                                  type="file"
-                                  accept="image/*"
-                                  className="hidden"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) handlePhotoCapture(order.id, file);
-                                    e.target.value = '';
-                                  }}
-                                />
-                              </label>
-                            </div>
-                          )}
-                        </div>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-2">
+                            <label
+                              htmlFor={`receipt-camera-capture-${order.id}`}
+                              className="flex min-h-12 items-center justify-center gap-2 rounded-xl border-2 border-cyan-500/70 bg-cyan-950/50 px-2 text-sm font-black text-cyan-100 cursor-pointer active:scale-98"
+                            >
+                              📸 تصوير
+                              <input
+                                id={`receipt-camera-capture-${order.id}`}
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handlePhotoCapture(order.id, file);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                            <label
+                              htmlFor={`receipt-gallery-picker-${order.id}`}
+                              className="flex min-h-12 items-center justify-center gap-2 rounded-xl border-2 border-slate-700 bg-slate-900 px-2 text-sm font-black text-slate-200 cursor-pointer active:scale-98"
+                            >
+                              🖼️ من الهاتف
+                              <input
+                                id={`receipt-gallery-picker-${order.id}`}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handlePhotoCapture(order.id, file);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                          </div>
+                        )}
 
                         {/* 4. Giant Confirm & Submit Button */}
-                        <div className="pt-4 border-t border-slate-800 space-y-2">
+                        <div className="space-y-2">
                           <Button
                             variant={isLockedBySupplement ? "secondary" : "success"}
                             size="lg"
                             isLoading={isSavingThis}
                             disabled={isLockedBySupplement || isSavingThis}
                             onClick={() => submitWarehouseReceipt(order)}
-                            className={`w-full font-black text-base sm:text-xl py-4 rounded-2xl shadow-2xl flex items-center justify-center gap-3 transition-all ${
+                            className={`w-full font-black text-base sm:text-lg py-3.5 rounded-xl shadow-xl flex items-center justify-center gap-2 transition-all ${
                               isLockedBySupplement
                                 ? 'bg-slate-800/90 text-amber-300/80 border-2 border-amber-600/50 cursor-not-allowed shadow-none'
                                 : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-950/80 cursor-pointer active:scale-98'
                             }`}
                           >
-                            <span className="text-2xl">{isLockedBySupplement ? '⏳' : '✅'}</span>
+                            <span className="text-xl">{isLockedBySupplement ? '⏳' : '✅'}</span>
                             <span>
                               {isLockedBySupplement
                                 ? `الاستلام مقفول مؤقتاً — بانتظار استكمال أمر الشراء للكمالة لدى م. أحمد`
-                                : `تأكيد واعتماد الاستلام النهائي للموقع (أمر #${order.po_number}) ونقله للحسابات`}
+                                : 'تأكيد الاستلام'}
                             </span>
                           </Button>
-                          <p className="text-center text-xs sm:text-sm font-bold text-slate-400">
-                            {isLockedBySupplement
-                              ? '⚠️ تم قفل الاستلام تلقائياً حتى يقوم مدير المشتريات (م. أحمد) بتسعير بنود الكمالة وتحميلها على أمر الشراء.'
-                              : '💡 ضغطة واحدة لحفظ إذن الاستلام نهائياً ونقله للإدارة المالية والحسابات للمطابقة والصرف فور انتهاء الصبة.'}
-                          </p>
+                          {isLockedBySupplement && (
+                            <p className="text-center text-xs font-bold text-slate-400">
+                              تم قفل الاستلام حتى تسعّر المشتريات بنود الكمالة وتحمّلها على أمر الشراء.
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>

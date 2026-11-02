@@ -60,8 +60,8 @@ describe('PurchaseReceiptPage Role Isolation', () => {
     );
 
     // Warehouse keeper specific UI elements
-    expect(await screen.findByText(/أمر شراء #PO-W-10/i)).toBeInTheDocument();
-    expect(screen.getByText(/استلام أعمى: يُسجل المستلم الكميات الفعلية/i)).toBeInTheDocument();
+    expect(await screen.findByText('#PO-W-10')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('الكمية المستلمة')).toBeInTheDocument();
   });
 
   it('renders compact single-line table when mode is site for site engineer or employee', async () => {
