@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { getApprovedPurchaseRequestApi } from '../../api/procurement';
 import { getSuppliersApi } from '../../api/suppliers';
-import { createPurchaseOrderApi, createBatchPurchaseOrdersApi, submitPurchaseOrderApi, createConsolidatedPurchaseOrdersApi, previewConsolidatedPurchaseOrdersApi } from '../../api/purchaseOrders';
+import { createPurchaseOrderApi, createBatchPurchaseOrdersApi, submitPurchaseOrderApi, createConsolidatedPurchaseOrdersApi, previewConsolidatedPurchaseOrdersApi, sendPurchaseOrderDirectToAccountingApi } from '../../api/purchaseOrders';
 import { المورد, ConsolidatedPoPreview, PurchaseOrderGroupPayload } from '../../types/purchaseOrder';
 import { PurchaseRequest } from '../../types/purchaseRequest';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -80,6 +80,10 @@ export const CreatePurchaseOrderPage: React.FC = () => {
   const [isDirectPoModalOpen, setIsDirectPoModalOpen] = useState<boolean>(false);
   const [isSupplementModalOpen, setIsSupplementModalOpen] = useState<boolean>(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
+  // "Send to accounting directly": issue, record the full receipt and the Actual PO in one go.
+  const [sendDirectMode, setSendDirectMode] = useState<boolean>(false);
+  const [directInvoiceFiles, setDirectInvoiceFiles] = useState<File[]>([]);
+  const [directHighValueReason, setDirectHighValueReason] = useState<string>('');
   // Mandatory department consolidation: the server decides the orders (one per supplier and scope).
   const consolidatedRequired = Boolean(pr?.consolidated_po_required);
   const [consolidationPreview, setConsolidationPreview] = useState<ConsolidatedPoPreview[] | null>(null);
@@ -648,6 +652,13 @@ export const CreatePurchaseOrderPage: React.FC = () => {
 
   const consolidatedOrderCount = consolidationPreview?.length ?? 0;
 
+  // The direct path needs exactly one order (one invoice, one supplier) and no steel weighing.
+  const directOrderCount = consolidatedRequired ? consolidatedOrderCount : resolvedGroups.filter((g) => g.items.length > 0).length;
+  const isOfficeRequest = pr?.request_type === 'OFFICE_SUPPLIES';
+  const hasSteelWeighing = resolvedGroups.some((g) => g.group_type === 'STEEL_WEIGHING');
+  const canSendDirect = !isOfficeRequest && !hasSteelWeighing && directOrderCount === 1;
+  const directNeedsReason = calculateGrandTotal() > 500000;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!prId) {
@@ -691,6 +702,21 @@ export const CreatePurchaseOrderPage: React.FC = () => {
     setIsConfirmModalOpen(true);
   };
 
+  // Returns the success message of the direct path, or null when the user issued normally.
+  const sendDirectIfChosen = async (orders: { id: number; po_number?: string }[]): Promise<string | null> => {
+    if (!sendDirectMode || orders.length !== 1) return null;
+    const label = orders[0].po_number ? `#${orders[0].po_number}` : '';
+    try {
+      await sendPurchaseOrderDirectToAccountingApi(orders[0].id, {
+        files: directInvoiceFiles,
+        highValueReason: directHighValueReason,
+      });
+      return `تم إصدار أمر الشراء ${label} وتسجيل استلامه وإرساله للحسابات مباشرة.`;
+    } catch (err) {
+      return `تم إصدار أمر الشراء ${label}، لكن لم يُرسل للحسابات: ${parseApiError(err).message} — يكمل من مسار الاستلام المعتاد.`;
+    }
+  };
+
   const executeCreateOrders = async () => {
     setIsConfirmModalOpen(false);
     setLoading(true);
@@ -717,14 +743,15 @@ export const CreatePurchaseOrderPage: React.FC = () => {
           idempotency_key: issueKeyRef.current,
         });
         issueKeyRef.current = null;
+        const directMessage = result.replayed ? null : await sendDirectIfChosen(result.orders);
 
         const numbers = result.orders.map((po) => `#${po.po_number}`).join('، ');
         const returnUrl = searchParams.get('returnUrl') || (location.state as { returnTo?: string })?.returnTo || '/procurement';
         navigate(returnUrl, {
           state: {
-            successMessage: result.replayed
+            successMessage: directMessage ?? (result.replayed
               ? `أوامر الشراء المجمعة لهذا الطلب صادرة بالفعل: ${numbers}.`
-              : `تم إصدار ${result.orders.length} أمر شراء مجمع (أمر لكل مورد): ${numbers}.`,
+              : `تم إصدار ${result.orders.length} أمر شراء مجمع (أمر لكل مورد): ${numbers}.`),
           },
         });
         return;
@@ -756,17 +783,18 @@ export const CreatePurchaseOrderPage: React.FC = () => {
         if (po?.status === 'PO_DRAFT' || po?.status === 'RETURNED_TO_PROCUREMENT') {
           await submitPurchaseOrderApi(po.id);
         }
+        const directMessage = po ? await sendDirectIfChosen([po]) : null;
 
         const returnUrl = searchParams.get('returnUrl') || (location.state as { returnTo?: string })?.returnTo || '/procurement';
         navigate(returnUrl, {
           state: {
-            successMessage: `تم إصدار أمر الشراء ${po?.po_number ? `#${po.po_number}` : ''} بنجاح.`,
+            successMessage: directMessage ?? `تم إصدار أمر الشراء ${po?.po_number ? `#${po.po_number}` : ''} بنجاح.`,
           },
         });
       } else {
         const groupsPayload = buildGroupsPayload(finalGroups, finalSupplierId);
 
-        await createBatchPurchaseOrdersApi({
+        const createdOrders = await createBatchPurchaseOrdersApi({
           purchase_request_id: prId,
           supplier_id: finalSupplierId ? Number(finalSupplierId) : undefined,
           one_time_supplier_name: oneTimeSupplierName.trim() || undefined,
@@ -774,11 +802,12 @@ export const CreatePurchaseOrderPage: React.FC = () => {
           notes: notes || undefined,
           groups: groupsPayload,
         });
+        const directMessage = await sendDirectIfChosen(createdOrders || []);
 
         const returnUrl = searchParams.get('returnUrl') || (location.state as { returnTo?: string })?.returnTo || '/procurement';
         navigate(returnUrl, {
           state: {
-            successMessage: `تم بنجاح إصدار ${finalGroups.length} أمر شراء مستقل/مدمج وفق التوزيع المحدد وإرسالها للحسابات.`,
+            successMessage: directMessage ?? `تم بنجاح إصدار ${finalGroups.length} أمر شراء مستقل/مدمج وفق التوزيع المحدد وإرسالها للحسابات.`,
           },
         });
       }
@@ -949,7 +978,7 @@ export const CreatePurchaseOrderPage: React.FC = () => {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={(e) => { setSendDirectMode(false); handleSubmit(e); }} className="space-y-6">
         
         {/* SUPPLEMENT NOTICE BANNER */}
         {pendingSupplement && (
@@ -1703,6 +1732,74 @@ export const CreatePurchaseOrderPage: React.FC = () => {
             )}
           </div>
 
+          {/* Send to accounting directly: no warehouse, no site inspection */}
+          {prId && !isOfficeRequest && (
+            canSendDirect ? (
+              <div className="mt-4 rounded-xl border border-emerald-700/40 bg-emerald-950/20 p-3 space-y-2.5">
+                <div>
+                  <p className="text-sm font-black text-emerald-200">إرسال للحسابات مباشرة</p>
+                  <p className="mt-0.5 text-[11px] leading-5 text-slate-400">
+                    يسجّل استلام كامل الكميات باسم {pr?.site_engineer?.name || 'مسؤول الاستلام'} ويصدر أمر الشراء الفعلي فورًا، بدون المخزن وفحص الموقع.
+                  </p>
+                </div>
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-bold text-slate-200 hover:border-emerald-600">
+                  📎 إرفاق فاتورة (اختياري)
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,image/jpeg,image/png,image/webp"
+                    onChange={(e) => {
+                      const picked = Array.from(e.target.files || []);
+                      setDirectInvoiceFiles((prev) => [...prev, ...picked].slice(0, 10));
+                      e.target.value = '';
+                    }}
+                    className="sr-only"
+                  />
+                </label>
+                {directInvoiceFiles.length > 0 && (
+                  <ul className="space-y-1">
+                    {directInvoiceFiles.map((file, idx) => (
+                      <li key={`${file.name}-${idx}`} className="flex items-center justify-between gap-2 rounded-lg bg-slate-900/70 px-2 py-1 text-[11px] text-slate-300">
+                        <span className="min-w-0 truncate">📄 {file.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setDirectInvoiceFiles((prev) => prev.filter((_, i) => i !== idx))}
+                          className="shrink-0 px-1 text-rose-300 hover:text-rose-200 cursor-pointer"
+                          aria-label={`إزالة ${file.name}`}
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {directNeedsReason && (
+                  <textarea
+                    value={directHighValueReason}
+                    onChange={(e) => setDirectHighValueReason(e.target.value)}
+                    rows={2}
+                    placeholder="القيمة أكبر من 500,000 — اكتب السبب (مطلوب)"
+                    className="w-full rounded-lg border border-amber-700/50 bg-slate-950 px-2.5 py-2 text-xs text-slate-100 placeholder:text-slate-500"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => { setSendDirectMode(true); handleSubmit(e); }}
+                  disabled={loading || !hasSupplier || (consolidatedRequired && (previewLoading || Boolean(previewError))) || (directNeedsReason && directHighValueReason.trim().length < 10)}
+                  className="w-full sm:w-auto rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-emerald-950/40 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+                >
+                  📨 إرسال للحسابات مباشرة
+                </button>
+              </div>
+            ) : (
+              <p className="mt-4 text-[11px] text-slate-500">
+                {hasSteelWeighing
+                  ? 'الإرسال للحسابات مباشرة غير متاح لأن الطلب فيه وزنة حديد تُستلم بالقبان.'
+                  : 'الإرسال للحسابات مباشرة متاح عندما يطلع من الطلب أمر شراء واحد فقط؛ هذا الطلب سيصدر عدة أوامر.'}
+              </p>
+            )
+          )}
+
           {/* Form الإجراءات */}
           <div className="flex flex-col gap-3 pt-4 border-t border-slate-800 sm:flex-row-reverse sm:items-center sm:justify-between">
             <button
@@ -1786,9 +1883,9 @@ export const CreatePurchaseOrderPage: React.FC = () => {
         onClose={() => setIsConfirmModalOpen(false)}
         onConfirm={executeCreateOrders}
         isLoading={loading}
-        title="مراجعة وتأكيد إصدار أمر الشراء"
+        title={sendDirectMode ? 'تأكيد الإصدار والإرسال للحسابات مباشرة' : 'مراجعة وتأكيد إصدار أمر الشراء'}
         subtitle={`طلب شراء رقم ${confirmationData.documentCode}`}
-        confirmLabel={consolidatedRequired ? `حسناً، إصدار (${consolidatedOrderCount}) أمر شراء مجمع` : resolvedGroups.length > 1 ? `حسناً، إصدار (${resolvedGroups.length}) أوامر شراء` : 'حسناً، إصدار أمر الشراء'}
+        confirmLabel={sendDirectMode ? 'حسناً، إصدار وإرسال للحسابات' : consolidatedRequired ? `حسناً، إصدار (${consolidatedOrderCount}) أمر شراء مجمع` : resolvedGroups.length > 1 ? `حسناً، إصدار (${resolvedGroups.length}) أوامر شراء` : 'حسناً، إصدار أمر الشراء'}
         cancelLabel="رجوع للتعديل"
         confirmVariant="primary"
         documentType="PURCHASE_ORDER"

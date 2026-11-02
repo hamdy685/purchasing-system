@@ -992,6 +992,103 @@ class PurchaseReceiptService
     }
 
     /**
+     * "Send to accounting directly": procurement records the whole order as received when issuing it,
+     * skipping the warehouse and site inspection, so the Actual PO can be issued right away.
+     * The receipt is in the name of the request's receiver and records that procurement entered it.
+     * Must run inside the caller's transaction together with the Actual PO.
+     */
+    public function recordFullReceiptByProcurement(User $procurementUser, PurchaseOrder $purchaseOrder): PurchaseReceipt
+    {
+        $po = PurchaseOrder::whereKey($purchaseOrder->id)->lockForUpdate()->firstOrFail();
+        $po->load(['items', 'purchaseRequest.department']);
+
+        if ($po->status !== 'ISSUED') {
+            throw new \RuntimeException('يمكن إرسال أمر الشراء للحسابات مباشرة بعد إصداره وقبل بدء الاستلام فقط.');
+        }
+        if ($po->purchaseRequest?->isOfficeRequest()) {
+            throw new \RuntimeException('المستلزمات المكتبية يؤكد استلامها مقدم الطلب، ولا تُرسل للحسابات مباشرة.');
+        }
+        if ($po->weighingGroups()->exists()) {
+            throw new \RuntimeException('بنود وزنة الحديد تُستلم بوزن القبان، ولا تُرسل للحسابات مباشرة.');
+        }
+
+        $receipts = PurchaseReceipt::where('purchase_order_id', $po->id)->lockForUpdate()->get();
+        if ($receipts->contains(fn ($r) => $r->status === 'APPROVED' || $r->warehouse_keeper_user_id)) {
+            throw new \RuntimeException('بدأ استلام هذا الأمر بالفعل؛ أكمل من مسار الاستلام المعتاد.');
+        }
+
+        $receiverId = $po->purchaseRequest?->site_engineer_user_id ?: $procurementUser->id;
+        $note = "سجّل {$procurementUser->name} (المشتريات) استلام كامل الكميات عند إصدار أمر الشراء وإرساله للحسابات مباشرة، دون المرور على المخزن أو فحص الموقع.";
+
+        // The order may already have an untouched direct-site receipt waiting for the engineer: reuse it.
+        $receipt = $receipts->first(fn ($r) => $r->status === 'PENDING_SITE_ENGINEER');
+        if ($receipt) {
+            $receipt->items()->delete();
+        } else {
+            $receipt = PurchaseReceipt::create([
+                'purchase_order_id' => $po->id,
+                'purchase_request_id' => $po->purchase_request_id,
+                'supplier_id' => $po->supplier_id ?: \App\Models\Supplier::getOrCreateInternalWarehouseSupplier()->id,
+                'warehouse_keeper_user_id' => null,
+                'receipt_number' => $this->generateUniqueReceiptNumber('REC-SITE-'),
+                'receipt_type' => 'SITE_DIRECT',
+                'status' => 'PENDING_SITE_ENGINEER',
+                'received_at' => now()->toDateString(),
+                'warehouse_submitted_at' => now(),
+            ]);
+        }
+
+        foreach ($po->items as $orderItem) {
+            $receipt->items()->create([
+                'purchase_order_item_id' => $orderItem->id,
+                'ordered_quantity' => $orderItem->quantity,
+                'received_quantity' => $orderItem->quantity,
+                'notes' => 'استلام كامل مسجل من المشتريات',
+            ]);
+        }
+
+        $receipt->update([
+            'status' => 'APPROVED',
+            'site_engineer_user_id' => $receiverId,
+            'receiver_user_id' => $receiverId,
+            'site_engineer_approved_at' => now(),
+            'site_engineer_notes' => $note,
+            'warehouse_notes' => $note,
+        ]);
+
+        $po->update([
+            'delivery_status' => 'DELIVERED',
+            'actual_delivery_date' => now()->toDateString(),
+            'status' => 'PENDING_ACTUAL_PO',
+        ]);
+
+        ApprovalHistory::create([
+            'target_type' => PurchaseReceipt::class,
+            'target_id' => $receipt->id,
+            'actor_user_id' => $procurementUser->id,
+            'action' => 'PROCUREMENT_RECORDED_FULL_RECEIPT',
+            'from_state' => 'ISSUED',
+            'to_state' => 'APPROVED',
+            'comments' => $note,
+        ]);
+
+        $notificationService = app(NotificationService::class);
+        $notificationService->markEntityNotificationsAsRead($receipt);
+        $notificationService->markEntityNotificationsAsRead($po);
+        if ($receiverId !== $procurementUser->id) {
+            $notificationService->queueNotification(
+                $receiverId,
+                'purchase_receipt_recorded_by_procurement',
+                'تم تسجيل استلام أمر شراء باسمك',
+                "سجّلت المشتريات استلام كامل كميات أمر الشراء {$po->po_number} باسمك وأرسلته للحسابات مباشرة.",
+                $receipt
+            );
+        }
+
+        return $receipt->fresh(['items']);
+    }
+
+    /**
      * Backward-compatible alias for createDirectSiteReceipt.
      */
     public function createDirectSiteReceiptForBuildings(PurchaseOrder $purchaseOrder): PurchaseReceipt

@@ -54,6 +54,26 @@ export const createBatchPurchaseOrdersApi = async (p: PurchaseOrderPayload) => {
   return response.data.data;
 };
 
+/**
+ * "Send to accounting directly" for a just-issued order: the full quantities are recorded as received
+ * (no warehouse, no site inspection) and the Actual PO is issued with the optional invoice files.
+ */
+export const sendPurchaseOrderDirectToAccountingApi = async (
+  id: number,
+  payload: { files?: File[]; highValueReason?: string } = {}
+) => {
+  const form = new FormData();
+  (payload.files || []).forEach((file) => form.append('attachments[]', file));
+  if (payload.highValueReason?.trim()) form.append('high_value_reason', payload.highValueReason.trim());
+  const response = await apiClient.post<{ message: string; data: PurchaseOrder }>(
+    `${base}/${id}/send-direct-to-accounting`,
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } }
+  );
+  invalidateCachedGet(base);
+  return response.data.data;
+};
+
 /** Orders the server would issue for a department-consolidated request (nothing is saved). */
 export const previewConsolidatedPurchaseOrdersApi = async (p: PurchaseOrderPayload): Promise<ConsolidatedPoPreview[]> => {
   const response = await apiClient.post<{ consolidated: boolean; data: ConsolidatedPoPreview[] }>(`${base}/consolidation-preview`, p);

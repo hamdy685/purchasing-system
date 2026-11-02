@@ -299,6 +299,8 @@ Route::middleware('auth:sanctum')->prefix('procurement')->group(function () {
 
     Route::post('/purchase-orders/{id}/finalize', [ProcurementPurchaseOrderController::class, 'finalizeActualPo'])
         ->middleware('permission:purchase_order.create');
+    Route::post('/purchase-orders/{id}/send-direct-to-accounting', [ProcurementPurchaseOrderController::class, 'sendDirectToAccounting'])
+        ->middleware('permission:purchase_order.create');
 
     Route::post('/purchase-orders/{id}/upload-invoice', [ProcurementPurchaseOrderController::class, 'uploadInvoice'])
         ->middleware('permission:purchase_order.create|purchase_order.edit|purchase_order.manage');

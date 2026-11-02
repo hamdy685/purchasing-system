@@ -959,6 +959,93 @@ class ProcurementPurchaseOrderController extends Controller
     }
 
     /**
+     * "Send to accounting directly" for a just-issued order: records the full quantities as received
+     * (no warehouse, no site inspection) and issues the Actual PO with the optional invoices, as one step.
+     */
+    public function sendDirectToAccounting(Request $request, string|int $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'attachments'       => ['nullable', 'array', 'max:' . self::MAX_INVOICE_ATTACHMENTS],
+            'attachments.*'     => ['file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:20480'],
+            'high_value_reason' => ['nullable', 'string', 'max:2000'],
+            'notes'             => ['nullable', 'string', 'max:3000'],
+        ]);
+
+        $po = PurchaseOrder::with(['items', 'purchaseRequest'])->findOrFail((int) $id);
+
+        try {
+            $uploads = $this->storeInvoiceUploads($request, $po);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        try {
+            $finalizedPo = DB::transaction(function () use ($request, $po, $validated, $uploads) {
+                app(\App\Services\PurchaseReceiptService::class)->recordFullReceiptByProcurement($request->user(), $po);
+
+                // The Actual PO keeps every line as issued: same quantities, prices and suppliers.
+                $items = $po->items->map(fn ($item) => [
+                    'id' => $item->id,
+                    'item_id' => $item->item_id,
+                    'pr_item_id' => $item->pr_item_id,
+                    'item_description' => $item->item_description,
+                    'item_reference' => $item->item_reference,
+                    'region' => $item->region,
+                    'quantity' => (float) $item->quantity,
+                    'uom' => $item->uom,
+                    'unit_price' => (float) $item->unit_price,
+                    'specifications' => $item->specifications,
+                    'supplier_id' => $item->supplier_id,
+                    'is_discount_applied' => (bool) $item->is_discount_applied,
+                ])->all();
+                $discountItemIds = $po->discount_type === 'SELECTED_ITEMS'
+                    ? $po->items->where('is_discount_applied', true)->pluck('id')->map(fn ($v) => (int) $v)->values()->all()
+                    : null;
+
+                $finalizedPo = $this->poService->finalizeActualPo(
+                    $request->user(),
+                    $po->fresh(),
+                    $items,
+                    $validated['notes'] ?? null,
+                    null,
+                    null,
+                    null,
+                    $po->discount_type,
+                    $po->discount_percentage !== null ? (float) $po->discount_percentage : null,
+                    $discountItemIds,
+                    $validated['high_value_reason'] ?? null
+                );
+
+                $this->recordInvoiceUploads($finalizedPo, $uploads, $request->user(), 'INVOICE_ATTACHED', true);
+
+                return $finalizedPo;
+            });
+        } catch (\App\Exceptions\HighValueReasonRequiredException $e) {
+            $this->discardInvoiceUploads($uploads);
+
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'HIGH_VALUE_REASON_REQUIRED',
+                'grand_total' => round($e->grandTotal, 2),
+                'threshold' => $e->threshold,
+                'errors' => ['high_value_reason' => [$e->getMessage()]],
+            ], 422);
+        } catch (\RuntimeException $e) {
+            $this->discardInvoiceUploads($uploads);
+
+            return response()->json(['message' => $e->getMessage()], 409);
+        } catch (\Throwable $e) {
+            $this->discardInvoiceUploads($uploads);
+            throw $e;
+        }
+
+        return response()->json([
+            'message' => 'تم تسجيل الاستلام وإصدار أمر الشراء الفعلي وإرساله للحسابات.',
+            'data'    => new PurchaseOrderResource($finalizedPo->fresh()),
+        ]);
+    }
+
+    /**
      * Store the invoice files of a request: the legacy single invoice_file / invoice_photo first, then attachments[].
      *
      * @return array<int, array> StorageService results with a non-empty path
