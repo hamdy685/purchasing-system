@@ -57,6 +57,62 @@ class MaterialTransferRequestService
     }
 
     /**
+     * Requesters with these roles skip the reviewer step entirely.
+     */
+    public function bypassesReview(User $user): bool
+    {
+        return $user->hasAnyRole(['reviewer', 'admin', 'general_manager']);
+    }
+
+    /**
+     * Validate the chosen reviewer (must be an active reviewer). Required on submit.
+     */
+    protected function resolveReviewerId(mixed $reviewerId, bool $required): ?int
+    {
+        if ($reviewerId === null || $reviewerId === '') {
+            if ($required) {
+                throw new InvalidArgumentException('اختار المراجع اللي هيراجع الطلب.');
+            }
+
+            return null;
+        }
+
+        $isReviewer = User::where('id', (int) $reviewerId)
+            ->where('is_active', true)
+            ->whereHas('roles', fn ($q) => $q->where('slug', 'reviewer'))
+            ->exists();
+
+        if (! $isReviewer) {
+            throw new InvalidArgumentException('المستخدم المختار مش مراجع.');
+        }
+
+        return (int) $reviewerId;
+    }
+
+    /**
+     * Status fields applied when a request is submitted.
+     */
+    protected function submitState(User $user, ?int $reviewerId): array
+    {
+        // Track 2: reviewer (or executive/admin) requester -> auto-reviewed, straight to accounting
+        if ($this->bypassesReview($user)) {
+            return [
+                'status' => MaterialTransferRequest::STATUS_PENDING_ACCOUNTING,
+                'reviewer_id' => $user->id,
+                'reviewed_at' => now(),
+                'review_notes' => 'اعتماد تلقائي - مقدم الطلب مراجع معتمد',
+            ];
+        }
+
+        // Track 1: goes only to the reviewer the requester picked
+        return [
+            'status' => MaterialTransferRequest::STATUS_PENDING_REVIEWER,
+            'reviewer_id' => $reviewerId,
+            'return_reason' => null,
+        ];
+    }
+
+    /**
      * Create a new material transfer request.
      */
     public function createRequest(User $user, array $data, bool $isSubmit = true): MaterialTransferRequest
@@ -65,21 +121,16 @@ class MaterialTransferRequestService
             $requestNumber = $this->generateUniqueRequestNumber();
 
             $status = MaterialTransferRequest::STATUS_DRAFT;
-            $reviewerId = null;
+            $reviewerId = $this->bypassesReview($user) ? null : $this->resolveReviewerId($data['reviewer_id'] ?? null, $isSubmit);
             $reviewedAt = null;
             $reviewNotes = null;
 
             if ($isSubmit) {
-                // Track 2: If creator is a Reviewer (or Executive/Admin), bypass reviewer approval
-                if ($user->hasAnyRole(['reviewer', 'admin', 'general_manager'])) {
-                    $status = MaterialTransferRequest::STATUS_PENDING_ACCOUNTING;
-                    $reviewerId = $user->id;
-                    $reviewedAt = now();
-                    $reviewNotes = 'اعتماد تلقائي - مقدم الطلب مراجع معتمد';
-                } else {
-                    // Track 1: Standard engineer / employee requester -> goes to reviewer
-                    $status = MaterialTransferRequest::STATUS_PENDING_REVIEWER;
-                }
+                $submitState = $this->submitState($user, $reviewerId);
+                $status = $submitState['status'];
+                $reviewerId = $submitState['reviewer_id'];
+                $reviewedAt = $submitState['reviewed_at'] ?? null;
+                $reviewNotes = $submitState['review_notes'] ?? null;
             }
 
             $request = MaterialTransferRequest::create([
@@ -140,16 +191,15 @@ class MaterialTransferRequestService
                 'general_notes' => array_key_exists('general_notes', $data) ? trim((string) $data['general_notes']) : $request->general_notes,
             ];
 
+            if (! $this->bypassesReview($user) && array_key_exists('reviewer_id', $data)) {
+                $updates['reviewer_id'] = $this->resolveReviewerId($data['reviewer_id'], false);
+            }
+
             if ($isSubmit) {
-                if ($user->hasAnyRole(['reviewer', 'admin', 'general_manager'])) {
-                    $updates['status'] = MaterialTransferRequest::STATUS_PENDING_ACCOUNTING;
-                    $updates['reviewer_id'] = $user->id;
-                    $updates['reviewed_at'] = now();
-                    $updates['review_notes'] = 'اعتماد تلقائي - مقدم الطلب مراجع معتمد';
-                } else {
-                    $updates['status'] = MaterialTransferRequest::STATUS_PENDING_REVIEWER;
-                    $updates['return_reason'] = null; // Clear return reason on resubmission
-                }
+                $reviewerId = $this->bypassesReview($user)
+                    ? null
+                    : $this->resolveReviewerId($updates['reviewer_id'] ?? $request->reviewer_id, true);
+                $updates = array_merge($updates, $this->submitState($user, $reviewerId));
             }
 
             $request->update($updates);
@@ -190,18 +240,8 @@ class MaterialTransferRequestService
         }
 
         return DB::transaction(function () use ($request, $user) {
-            $updates = [];
-            if ($user->hasAnyRole(['reviewer', 'admin', 'general_manager'])) {
-                $updates['status'] = MaterialTransferRequest::STATUS_PENDING_ACCOUNTING;
-                $updates['reviewer_id'] = $user->id;
-                $updates['reviewed_at'] = now();
-                $updates['review_notes'] = 'اعتماد تلقائي - مقدم الطلب مراجع معتمد';
-            } else {
-                $updates['status'] = MaterialTransferRequest::STATUS_PENDING_REVIEWER;
-                $updates['return_reason'] = null;
-            }
-
-            $request->update($updates);
+            $reviewerId = $this->bypassesReview($user) ? null : $this->resolveReviewerId($request->reviewer_id, true);
+            $request->update($this->submitState($user, $reviewerId));
 
             if ($request->status === MaterialTransferRequest::STATUS_PENDING_REVIEWER) {
                 $this->notifyReviewers($request);
@@ -376,7 +416,8 @@ class MaterialTransferRequestService
     public function getPendingReviewerRequests(User $user, array $filters = []): LengthAwarePaginator
     {
         $query = MaterialTransferRequest::with(['user', 'items'])
-            ->where('status', MaterialTransferRequest::STATUS_PENDING_REVIEWER);
+            ->where('status', MaterialTransferRequest::STATUS_PENDING_REVIEWER)
+            ->assignedToReviewer($user);
 
         $this->applyFilters($query, $filters);
 
@@ -463,9 +504,7 @@ class MaterialTransferRequestService
      */
     protected function notifyReviewers(MaterialTransferRequest $request): void
     {
-        $reviewers = User::whereHas('roles', function ($q) {
-            $q->whereIn('slug', ['reviewer', 'admin']);
-        })->where('is_active', true)->get();
+        $reviewers = User::where('id', $request->reviewer_id)->where('is_active', true)->get();
 
         $this->notificationService->notifyUsers(
             $reviewers,

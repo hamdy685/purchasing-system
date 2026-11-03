@@ -746,6 +746,7 @@ class DashboardPendingTasksController extends Controller
         if ($user->hasRole('reviewer') || $user->hasAnyRole(['admin', 'general_manager', 'execution_manager'])) {
             $pendingReviewMtrs = \App\Models\MaterialTransferRequest::with(['user', 'items'])
                 ->where('status', \App\Models\MaterialTransferRequest::STATUS_PENDING_REVIEWER)
+                ->assignedToReviewer($user)
                 ->get();
             foreach ($pendingReviewMtrs as $mtr) {
                 $tasks->push([

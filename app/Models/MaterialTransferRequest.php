@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -135,7 +136,25 @@ class MaterialTransferRequest extends Model
             return false;
         }
 
+        // Assigned to a specific reviewer: only that reviewer can act on it
+        if ($this->reviewer_id) {
+            return (int) $this->reviewer_id === (int) $user->id;
+        }
+
         return $user->hasAnyRole(['reviewer', 'admin', 'general_manager', 'execution_manager']);
+    }
+
+    /**
+     * Pending requests this user may review: assigned to them, or legacy unassigned ones.
+     */
+    public function scopeAssignedToReviewer(Builder $query, User $user): Builder
+    {
+        return $query->where(function (Builder $q) use ($user) {
+            $q->where('reviewer_id', $user->id);
+            if ($user->hasAnyRole(['reviewer', 'admin', 'general_manager', 'execution_manager'])) {
+                $q->orWhereNull('reviewer_id');
+            }
+        });
     }
 
     public function canBeAccountedBy(User $user): bool

@@ -10,6 +10,8 @@ import { MaterialTransferPayload, MaterialTransferRequest } from '../../types/ma
 import { PrintableMaterialTransfer } from '../../components/transfers/PrintableMaterialTransfer';
 import { Modal } from '../../components/ui/Modal';
 import { toast } from '../../utils/toast';
+import { getPurchaseRequestReviewerOptionsApi } from '../../api/purchaseRequests';
+import { ReviewerOption } from '../../types/purchaseRequest';
 
 interface ItemRow {
   id?: number;
@@ -59,6 +61,16 @@ export const CreateMaterialTransferPage: React.FC = () => {
   const [vehiclePlateNumber, setVehiclePlateNumber] = useState<string>('');
   const [generalNotes, setGeneralNotes] = useState<string>('');
   const [requestNumber, setRequestNumber] = useState<string>('');
+  const [reviewerId, setReviewerId] = useState<string>('');
+  const [reviewerOptions, setReviewerOptions] = useState<ReviewerOption[]>([]);
+
+  // Non-reviewer requesters pick the reviewer who gets this request
+  useEffect(() => {
+    if (isReviewer) return;
+    getPurchaseRequestReviewerOptionsApi()
+      .then(setReviewerOptions)
+      .catch(() => toast.error('تعذر تحميل قائمة المراجعين'));
+  }, [isReviewer]);
 
   const [items, setItems] = useState<ItemRow[]>([
     { item_description: '', uom: 'طن', quantity: '', notes: '' },
@@ -77,6 +89,7 @@ export const CreateMaterialTransferPage: React.FC = () => {
           setDriverName(data.driver_name || '');
           setVehiclePlateNumber(data.vehicle_plate_number || '');
           setGeneralNotes(data.general_notes || '');
+          setReviewerId(data.reviewer?.id ? String(data.reviewer.id) : '');
 
           if (data.items && data.items.length > 0) {
             setItems(
@@ -121,7 +134,11 @@ export const CreateMaterialTransferPage: React.FC = () => {
     });
   };
 
-  const validate = (): boolean => {
+  const validate = (isDraft: boolean): boolean => {
+    if (!isDraft && !isReviewer && !reviewerId) {
+      toast.error('اختار المراجع.');
+      return false;
+    }
     if (!transferDate) {
       toast.error('يرجى تحديد تاريخ النقل.');
       return false;
@@ -167,6 +184,7 @@ export const CreateMaterialTransferPage: React.FC = () => {
       driver_name: driverName.trim() || undefined,
       vehicle_plate_number: vehiclePlateNumber.trim() || undefined,
       general_notes: generalNotes.trim() || undefined,
+      reviewer_id: !isReviewer && reviewerId ? Number(reviewerId) : undefined,
       is_draft: isDraft,
       items: items.map(it => ({
         item_description: it.item_description.trim(),
@@ -178,7 +196,7 @@ export const CreateMaterialTransferPage: React.FC = () => {
   };
 
   const handleSave = async (isDraft: boolean) => {
-    if (!validate()) return;
+    if (!validate(isDraft)) return;
 
     setSubmitting(true);
     const payload = buildPayload(isDraft);
@@ -294,12 +312,12 @@ export const CreateMaterialTransferPage: React.FC = () => {
         <span className="text-xl shrink-0">{isReviewer ? '⚡' : 'ℹ️'}</span>
         <div className="space-y-1">
           <p className="font-bold text-sm">
-            {isReviewer ? 'مسار المراجع (المسار الثاني المباشر):' : 'مسار المهندس / مقدم الطلب (المسار الأول):'}
+            {isReviewer ? 'طلبك معتمد تلقائياً' : 'الطلب هيروح للمراجع اللي تختاره'}
           </p>
           <p className="text-slate-300">
             {isReviewer
-              ? 'بصفتك مراجعاً معتمداً، عند إرسال هذا الطلب سينتقل تلقائياً ومباشرة إلى الإدارة المالية والحسابات دون الحاجة إلى دورة مراجعة مكررة.'
-              : 'عند إرسال الطلب، سيظهر في صندوق وارد المراجع المختص للموافقة أو الرفض أو الإعادة للتعديل. وفور موافقة المراجع، ينتقل الطلب تلقائياً للحسابات للأرشفة.'}
+              ? 'إنت مراجع، فالطلب هيتحول للحسابات على طول من غير مراجعة.'
+              : 'المراجع اللي تختاره بس هو اللي يوافق أو يرفض أو يرجّع الطلب، وبعد موافقته يتحول للحسابات.'}
           </p>
         </div>
       </div>
@@ -314,7 +332,7 @@ export const CreateMaterialTransferPage: React.FC = () => {
             <span>بيانات المشروعات والتاريخ</span>
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Transfer Date */}
             <div>
               <label className="block text-xs font-bold text-slate-300 mb-1.5">
@@ -358,6 +376,27 @@ export const CreateMaterialTransferPage: React.FC = () => {
                 required
               />
             </div>
+
+            {/* Reviewer (non-reviewer requesters only) */}
+            {!isReviewer && (
+              <div>
+                <label htmlFor="mtr-reviewer" className="block text-xs font-bold text-slate-300 mb-1.5">
+                  المراجع <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  id="mtr-reviewer"
+                  value={reviewerId}
+                  onChange={e => setReviewerId(e.target.value)}
+                  className="w-full min-w-0 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 transition-colors"
+                  required
+                >
+                  <option value="">اختار المراجع</option>
+                  {reviewerOptions.map(r => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
 

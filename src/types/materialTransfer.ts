@@ -69,6 +69,7 @@ export interface MaterialTransferPayload {
   driver_name?: string;
   vehicle_plate_number?: string;
   general_notes?: string;
+  reviewer_id?: number;
   is_draft?: boolean;
   items: Array<{
     item_description: string;

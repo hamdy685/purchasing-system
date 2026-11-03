@@ -48,8 +48,10 @@ class MaterialTransferLifecycleTest extends TestCase
     public function test_engineer_can_create_material_transfer_request(): void
     {
         $engineer = $this->makeUser('engineer@example.com', 'مهندس الموقع', 'employee');
+        $reviewer = $this->makeUser('picked@example.com', 'المراجع المختار', 'reviewer');
 
         $payload = [
+            'reviewer_id' => $reviewer->id,
             'from_project' => 'مشروع برج الأمل',
             'to_project' => 'مشروع كمبوند الزهور',
             'transfer_date' => '2026-10-25',
@@ -80,11 +82,81 @@ class MaterialTransferLifecycleTest extends TestCase
             'to_project' => 'مشروع كمبوند الزهور',
             'driver_name' => 'حسام البدري',
             'status' => 'PENDING_REVIEWER',
+            'reviewer_id' => $reviewer->id,
         ]);
 
         $transfer = MaterialTransferRequest::first();
         $this->assertCount(2, $transfer->items);
         $this->assertStringStartsWith('MTR-', $transfer->request_number);
+    }
+
+    private function transferPayload(array $overrides = []): array
+    {
+        return array_merge([
+            'from_project' => 'مشروع أ',
+            'to_project' => 'مشروع ب',
+            'transfer_date' => '2026-10-25',
+            'items' => [['item_description' => 'حديد', 'uom' => 'طن', 'quantity' => 2]],
+        ], $overrides);
+    }
+
+    public function test_submit_requires_a_valid_reviewer(): void
+    {
+        $engineer = $this->makeUser('eng-r@example.com', 'مهندس', 'employee');
+        $notReviewer = $this->makeUser('emp2@example.com', 'موظف', 'employee');
+
+        $this->actingAs($engineer, 'sanctum')
+            ->postJson('/api/v1/material-transfers', $this->transferPayload())
+            ->assertStatus(422);
+
+        $this->actingAs($engineer, 'sanctum')
+            ->postJson('/api/v1/material-transfers', $this->transferPayload(['reviewer_id' => $notReviewer->id]))
+            ->assertStatus(422);
+
+        $this->assertDatabaseCount('material_transfer_requests', 0);
+    }
+
+    public function test_only_the_chosen_reviewer_sees_and_approves_the_request(): void
+    {
+        $engineer = $this->makeUser('eng-c@example.com', 'مهندس', 'employee');
+        $chosen = $this->makeUser('chosen@example.com', 'المراجع المختار', 'reviewer');
+        $other = $this->makeUser('other@example.com', 'مراجع آخر', 'reviewer');
+
+        $this->actingAs($engineer, 'sanctum')
+            ->postJson('/api/v1/material-transfers', $this->transferPayload(['reviewer_id' => $chosen->id]))
+            ->assertStatus(201);
+        $transfer = MaterialTransferRequest::first();
+
+        $this->actingAs($other, 'sanctum')
+            ->getJson('/api/v1/material-transfers/reviewer/pending')
+            ->assertOk()->assertJsonCount(0, 'data');
+        $this->actingAs($other, 'sanctum')
+            ->postJson("/api/v1/material-transfers/{$transfer->id}/approve")
+            ->assertStatus(422);
+
+        $this->actingAs($chosen, 'sanctum')
+            ->getJson('/api/v1/material-transfers/reviewer/pending')
+            ->assertOk()->assertJsonCount(1, 'data');
+        $this->actingAs($chosen, 'sanctum')
+            ->postJson("/api/v1/material-transfers/{$transfer->id}/approve")
+            ->assertOk();
+
+        $this->assertEquals(MaterialTransferRequest::STATUS_PENDING_ACCOUNTING, $transfer->fresh()->status);
+    }
+
+    public function test_reviewer_requester_skips_review_and_ignores_picked_reviewer(): void
+    {
+        $reviewer = $this->makeUser('self-rev@example.com', 'مراجع مقدم', 'reviewer');
+        $other = $this->makeUser('other2@example.com', 'مراجع آخر', 'reviewer');
+
+        $this->actingAs($reviewer, 'sanctum')
+            ->postJson('/api/v1/material-transfers', $this->transferPayload(['reviewer_id' => $other->id]))
+            ->assertStatus(201);
+
+        $transfer = MaterialTransferRequest::first();
+        $this->assertEquals(MaterialTransferRequest::STATUS_PENDING_ACCOUNTING, $transfer->status);
+        $this->assertEquals($reviewer->id, $transfer->reviewer_id);
+        $this->assertNotNull($transfer->reviewed_at);
     }
 
     public function test_reviewer_can_approve_material_transfer_request(): void
