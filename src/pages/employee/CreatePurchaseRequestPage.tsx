@@ -594,7 +594,7 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-2.5 sm:space-y-3 pb-28 sm:pb-24 px-1 sm:px-0" dir="rtl">
+    <div className="mx-auto w-full min-w-0 max-w-6xl space-y-2.5 sm:space-y-3 pb-28 sm:pb-24 px-1 sm:px-0" dir="rtl">
       {/* Top Header - Static on Mobile to free vertical viewport, Sticky on Desktop */}
       <div className="static sm:sticky sm:top-2 z-40 rounded-xl sm:rounded-2xl border border-slate-700/80 bg-slate-950/90 p-2.5 sm:p-3 shadow-xl backdrop-blur-md transition-all">
         <div className="flex items-center justify-between gap-2 sm:gap-3">
@@ -681,7 +681,7 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
           <button
             type="button"
             onClick={() => setData({ ...data, request_type: 'PROJECT' })}
-            className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+            className={`flex min-w-0 items-center justify-center gap-1 sm:gap-1.5 px-1.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
               data.request_type === 'PROJECT'
                 ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
@@ -694,7 +694,7 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
           <button
             type="button"
             onClick={() => setData({ ...data, request_type: 'OFFICE_SUPPLIES' })}
-            className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+            className={`flex min-w-0 items-center justify-center gap-1 sm:gap-1.5 px-1.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
               data.request_type === 'OFFICE_SUPPLIES'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
@@ -707,7 +707,7 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
           <button
             type="button"
             onClick={() => setData({ ...data, request_type: 'COMPLEMENTARY' })}
-            className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+            className={`flex min-w-0 items-center justify-center gap-1 sm:gap-1.5 px-1.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
               data.request_type === 'COMPLEMENTARY'
                 ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-md shadow-amber-500/30 ring-1 ring-amber-300'
                 : 'text-amber-400/80 hover:text-amber-300 hover:bg-slate-900'
@@ -989,8 +989,8 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
 
       {/* Card 2: Items List */}
       <Card className="space-y-3 border-slate-800 bg-slate-900/90 p-3.5 sm:p-4 shadow-xl">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-2.5">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 border-b border-slate-800 pb-2.5">
+          <div className="flex min-w-0 items-center gap-2">
             <h2 className="text-xs sm:text-sm font-black text-slate-100 flex items-center gap-2">
               <span className="text-cyan-400">📦</span> 2. بنود ومواد الطلب
             </h2>
@@ -1006,7 +1006,7 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
             onClick={addItem}
             className="text-xs bg-cyan-600 hover:bg-cyan-500 border-cyan-500 font-bold px-3 py-1 flex items-center gap-1.5 shadow-md shadow-cyan-950/40"
           >
-            <span>+</span> إضافة صنف جديد
+            <span>+</span> إضافة صنف
           </Button>
         </div>
 
@@ -1321,7 +1321,7 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
             onClick={addItem}
             className="text-xs border-dashed border-slate-700 hover:border-cyan-500/70 hover:text-cyan-300 px-4 py-2"
           >
-            + إضافة سطر صنف آخر (Add Row)
+            + إضافة صنف آخر
           </Button>
 
         </div>
@@ -1371,7 +1371,7 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
         </div>
 
         {/* Action Buttons: Unified Row on Mobile & Desktop */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+        <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:w-auto">
           <Button
             type="button"
             variant="secondary"
@@ -1379,7 +1379,7 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
             onClick={handleSaveDraft}
             disabled={isSubmitting || isSavingDraft}
             isLoading={isSavingDraft}
-            className="text-xs shrink-0 py-2 sm:py-2.5 px-3"
+            className="min-w-0 text-xs sm:shrink-0 py-2 sm:py-2.5 px-3"
           >
             <span className="sm:hidden">💾 مسودة</span>
             <span className="hidden sm:inline">💾 حفظ كمسودة</span>
@@ -1392,12 +1392,12 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
             onClick={() => void handleSubmit(true)}
             disabled={isSubmitting || isSavingDraft}
             isLoading={isSubmitting}
-            className="py-2 sm:py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-bold border-amber-500/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 hover:border-amber-400 shrink-0 shadow-md shadow-amber-950/40"
+            className="py-2 sm:py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-bold border-amber-500/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 hover:border-amber-400 min-w-0 sm:shrink-0 shadow-md shadow-amber-950/40"
             title="إرسال الطلب وحفظ بنوده في قائمتك المفضلة لاستخدامها لاحقاً"
           >
             <span>⭐</span>
             <span className="hidden sm:inline">إرسال وحفظ في المفضلة</span>
-            <span className="sm:hidden">إرسال ومفضلة ⭐</span>
+            <span className="sm:hidden">إرسال ومفضلة</span>
           </Button>
 
           <Button
@@ -1407,7 +1407,7 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
             onClick={() => void handleSubmit(false)}
             disabled={isSubmitting || isSavingDraft}
             isLoading={isSubmitting}
-            className="flex-1 sm:flex-initial px-4 sm:px-6 py-2.5 shadow-lg shadow-cyan-600/30 text-xs sm:text-sm font-bold justify-center"
+            className="col-span-2 min-w-0 whitespace-normal sm:flex-initial px-4 sm:px-6 py-2.5 shadow-lg shadow-cyan-600/30 text-xs sm:text-sm font-bold justify-center"
           >
             🚀 {isReviewer
               ? 'اعتماد وإرسال للمدير التنفيذي'
