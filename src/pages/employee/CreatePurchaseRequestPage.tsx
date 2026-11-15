@@ -212,6 +212,21 @@ interface CreatePurchaseRequestPageProps {
   initialRequestType?: PurchaseRequestType;
 }
 
+// Site departments buy for projects; every other department mostly buys office supplies.
+const PROJECT_DEPARTMENT_CODES = ['EXECUTION', 'FINISHING', 'BUILDINGS'];
+const PROJECT_DEPARTMENT_NAMES = ['التنفيذ', 'التشطيبات', 'المباني', 'المبانى'];
+
+export const getDefaultRequestTypeForDepartment = (
+  department?: { code?: string | null; name?: string | null } | null,
+): PurchaseRequestType => {
+  if (!department) return 'PROJECT';
+  const code = (department.code || '').toUpperCase();
+  const name = (department.name || '').trim();
+  return PROJECT_DEPARTMENT_CODES.includes(code) || PROJECT_DEPARTMENT_NAMES.includes(name)
+    ? 'PROJECT'
+    : 'OFFICE_SUPPLIES';
+};
+
 export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps> = ({ initialRequestType }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -220,10 +235,12 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
     location.pathname.includes('complementary') ||
     searchParams.get('type') === 'COMPLEMENTARY';
 
-  const effectiveInitialType: PurchaseRequestType = isComplementaryRoute ? 'COMPLEMENTARY' : 'PROJECT';
   const draftStorageKey = isComplementaryRoute ? 'ashbiliya.purchase-request.draft.complementary.v1' : DRAFT_STORAGE_KEY;
 
   const { hasRole, user } = useAuth();
+  const effectiveInitialType: PurchaseRequestType = isComplementaryRoute
+    ? 'COMPLEMENTARY'
+    : getDefaultRequestTypeForDepartment(user?.department);
   const isGeneralManager = hasRole('general_manager') || hasRole('execution_manager');
   // Procurement and the financial manager skip the reviewer, so they choose the receiver and warehouse route like one.
   const isReviewer = !isGeneralManager && (hasRole('reviewer') || hasRole('procurement_manager') || hasRole('accountant'));
@@ -299,7 +316,7 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
         setData({
           ...getInitialData(effectiveInitialType),
           ...parsed,
-          request_type: isComplementaryRoute ? 'COMPLEMENTARY' : (parsed.request_type || 'PROJECT'),
+          request_type: isComplementaryRoute ? 'COMPLEMENTARY' : (parsed.request_type || effectiveInitialType),
           date_needed: validDateNeeded,
           items: validItems,
         });
