@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\GeneralManagerPurchaseOrderController;
 use App\Http\Controllers\Api\V1\GeneralManagerPurchaseRequestController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\GuestOfficeRequestController;
 use App\Http\Controllers\Api\V1\DashboardPendingTasksController;
 use App\Http\Controllers\Api\V1\LandParcelController;
 use App\Http\Controllers\Api\V1\ProcurementAnalyticsController;
@@ -45,6 +46,12 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::get('/health', [HealthController::class, 'index']);
+
+// Public office-supplies link (no sign-in). The secret token in the URL is the only key.
+Route::prefix('public/office-requests')->group(function () {
+    Route::get('/{token}', [GuestOfficeRequestController::class, 'form'])->middleware('throttle:30,1');
+    Route::post('/{token}', [GuestOfficeRequestController::class, 'store'])->middleware('throttle:5,1');
+});
 
 
 // Authentication & Authorization Routes
@@ -555,6 +562,8 @@ Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
 // Master Orders Control (All Orders & Sovereign Force Override)
 Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
     Route::get('/all-orders-master', [AdminMasterOrdersController::class, 'index']);
+    Route::get('/guest-office-link', [GuestOfficeRequestController::class, 'adminShow']);
+    Route::post('/guest-office-link/rotate', [GuestOfficeRequestController::class, 'adminRotate']);
     Route::get('/orders/{id}/details', [AdminMasterOrdersController::class, 'showOrder']);
     Route::put('/orders/{id}/force-update', [AdminMasterOrdersController::class, 'forceUpdateOrder']);
     Route::get('/requests/{id}/stage', [AdminMasterOrdersController::class, 'showRequestStage'])->whereNumber('id');

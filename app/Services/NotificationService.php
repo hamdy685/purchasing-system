@@ -192,6 +192,11 @@ class NotificationService
             return null;
         }
 
+        // The shared account behind public-link requests cannot sign in, so nothing is sent to it.
+        if (GuestOfficeRequestService::isSystemUser($user)) {
+            return null;
+        }
+
         // The Admin role must never receive standard procurement/workflow notifications.
         // Admin ONLY receives system errors/health/monitoring alerts.
         if ($user->hasRole('admin') && !str_starts_with($type, 'system_error') && !str_starts_with($type, 'system_issue') && !str_starts_with($type, 'system_alert')) {

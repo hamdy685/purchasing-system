@@ -70,6 +70,8 @@ class PurchaseRequest extends Model
         'region',
         'land_parcel_id',
         'user_id',
+        'guest_requester_name',
+        'guest_requester_phone',
         'department_id',
         'target_department_id',
         'reviewer_user_id',
@@ -278,6 +280,37 @@ class PurchaseRequest extends Model
 
             'submitted_at' => 'datetime',
         ];
+    }
+
+    /**
+     * True for a request sent from the public office-supplies link.
+     */
+    public function isGuestRequest(): bool
+    {
+        return filled($this->getAttribute('guest_requester_name'));
+    }
+
+    /**
+     * A request from the public link belongs to one shared internal account, so
+     * wherever its requester is loaded the typed name is shown instead.
+     * The swapped name is kept clean (not dirty) so it is never saved to the user.
+     */
+    public function setRelation($relation, $value)
+    {
+        if (in_array($relation, ['requester', 'user'], true)
+            && $value instanceof User
+            && array_key_exists('guest_requester_name', $this->attributes)
+            && $this->isGuestRequest()
+        ) {
+            $value = clone $value;
+            $value->setAttribute('name', $this->guest_requester_name . ' (مقدم مؤقت)');
+            if (filled($this->getAttribute('guest_requester_phone'))) {
+                $value->setAttribute('phone', $this->guest_requester_phone);
+            }
+            $value->syncOriginal();
+        }
+
+        return parent::setRelation($relation, $value);
     }
 
     public function requester(): BelongsTo

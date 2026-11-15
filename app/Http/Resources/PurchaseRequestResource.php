@@ -77,6 +77,9 @@ class PurchaseRequestResource extends JsonResource
             'updated_at' => $this->updated_at instanceof \DateTimeInterface
                 ? $this->updated_at->toIso8601String()
                 : ($this->updated_at ? (string) $this->updated_at : null),
+            'is_guest_request' => $this->resource->isGuestRequest(),
+            'guest_requester_name' => $this->guest_requester_name,
+            'guest_requester_phone' => $this->guest_requester_phone,
             'requester' => $this->whenLoaded('requester', function () {
                 if (! $this->requester) {
                     return null;

@@ -18,6 +18,7 @@ import { useAuth } from '../../context/AuthContext';
 import { KpiCard, Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { DashboardBars } from '../../components/ui/DashboardCharts';
+import GuestOfficeLinkCard from '../../components/admin/GuestOfficeLinkCard';
 import { exportToCsv } from '../../utils/exportCsv';
 import ActionRequiredInbox, { ActionInboxItem } from '../../components/dashboard/ActionRequiredInbox';
 
@@ -473,6 +474,8 @@ export const AdminDashboardPage: React.FC = () => {
           />
         )}
       </div>
+
+      <GuestOfficeLinkCard />
 
       {/* ── سجل الأحداث والنشاط اللحظي (Audit Trail Feed) ── */}
       <Card className="space-y-4">

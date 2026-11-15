@@ -757,7 +757,9 @@ class PurchaseReceiptService
             throw new \RuntimeException('هذا الأمر يخص مشروعاً ويتطلب استلام أمين المخزن واعتماد مهندس الموقع.');
         }
 
-        $isRequester = (int) $pr->user_id === (int) $requester->id;
+        $isRequester = (int) $pr->user_id === (int) $requester->id
+            // A request from the public link has no one to sign in, so the department reviewer receives it.
+            || ($pr->isGuestRequest() && (int) $pr->reviewer_user_id === (int) $requester->id);
         $isPrivileged = $requester->hasAnyRole(['admin', 'general_manager', 'procurement_manager']);
         if (!$isRequester && !$isPrivileged) {
             throw new \RuntimeException('فقط مقدم الطلب أو إدارة المشتريات/الإدارة العامة يمكنهم تأكيد استلام هذا الطلب المكتبي.');
@@ -1214,13 +1216,23 @@ class PurchaseReceiptService
                     ->where('request_type', 'OFFICE_SUPPLIES');
 
                 if (! $user->hasAnyRole(['admin', 'procurement_manager', 'general_manager'])) {
-                    $query->where('user_id', $user->id);
+                    $query->where(function ($owner) use ($user) {
+                        $owner->where('user_id', $user->id)
+                            ->orWhere(function ($guest) use ($user) {
+                                $guest->whereNotNull('guest_requester_name')
+                                    ->where('reviewer_user_id', $user->id);
+                            });
+                    });
                 }
             })
             ->get();
 
         foreach ($pendingPos as $po) {
-            $requesterId = (int) ($po->purchaseRequest?->user_id ?? $user->id);
+            $pr = $po->purchaseRequest;
+            // Public-link requests are received by the department reviewer.
+            $requesterId = $pr && $pr->isGuestRequest() && $pr->reviewer_user_id
+                ? (int) $pr->reviewer_user_id
+                : (int) ($pr?->user_id ?? $user->id);
             $this->createOfficeReceipt($po, $requesterId);
         }
     }

@@ -5,6 +5,7 @@ import LoginPage from "../pages/LoginPage";
 import ProtectedPage from "../pages/ProtectedPage";
 import { lazyImportWithRetry } from "../utils/lazyImportWithRetry";
 
+const GuestOfficeRequestPage = lazyImportWithRetry(() => import("../pages/public/GuestOfficeRequestPage"), "GuestOfficeRequestPage");
 const EmployeeDashboardPage = lazyImportWithRetry(() => import("../pages/employee/EmployeeDashboardPage"), "EmployeeDashboardPage");
 const PurchaseRequestsPage = lazyImportWithRetry(() => import("../pages/employee/PurchaseRequestsPage"), "PurchaseRequestsPage");
 const CreatePurchaseRequestPage = lazyImportWithRetry(() => import("../pages/employee/CreatePurchaseRequestPage"), "CreatePurchaseRequestPage");
@@ -89,6 +90,7 @@ export const AppRoutes: React.FC = () => {
             <Routes>
             {/* Public Routes */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/office-request/:token" element={<GuestOfficeRequestPage />} />
 
             {/* Protected Routes wrapped in Authenticated Layout */}
             <Route
