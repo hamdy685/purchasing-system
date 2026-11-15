@@ -23,27 +23,9 @@ try {
 
   if (isConfigured) {
     const messaging = firebase.messaging();
+    // The push carries a `notification` block, so Firebase already shows it once.
+    // Showing it here too made every status change appear more than once on the phone.
     messaging.onBackgroundMessage((payload) => {
-      const notificationTitle = payload.notification?.title || payload.data?.title || 'إشعار جديد في نظام المشتريات';
-      const notificationOptions = {
-        body: payload.notification?.body || payload.data?.body || 'لديك تحديث جديد على أحد طلبات الشراء أو الفواتير.',
-        icon: '/eshbelia-logo.png',
-        badge: '/eshbelia-logo.png',
-        dir: 'rtl',
-        lang: 'ar',
-        vibrate: [200, 100, 200],
-        tag: (payload.data && payload.data.id) ? String(payload.data.id) : 'ashbiliya-' + Date.now(),
-        renotify: true,
-        requireInteraction: true,
-        data: {
-          url: payload.data?.url || payload.notification?.click_action || '/notifications',
-          ...payload.data,
-        },
-      };
-
-      self.registration.showNotification(notificationTitle, notificationOptions);
-
-      // Update app icon badge count when background notification arrives
       const rawCount = payload.data?.unread_count;
       const count = rawCount ? parseInt(rawCount, 10) : 1;
       if (self.navigator && self.navigator.setAppBadge) {
@@ -66,67 +48,17 @@ const APP_SHELL_URLS = [
   '/eshbelia-logo.png',
 ];
 
-// Fallback native push listener for mobile devices
-self.addEventListener('push', (event) => {
-  if (!event.data) return;
-  try {
-    const rawData = event.data.json();
-    const notification = rawData.notification || {};
-    const data = rawData.data || {};
-
-    const title = notification.title || data.title || 'إشعار جديد في نظام المشتريات';
-    const body = notification.body || data.body || 'لديك تحديث جديد على أحد طلبات الشراء أو الفواتير.';
-    const targetUrl = data.url || notification.click_action || '/notifications';
-
-    const options = {
-      body: body,
-      icon: '/icon-192x192.png',
-      badge: '/favicon-32x32.png',
-      dir: 'rtl',
-      lang: 'ar',
-      vibrate: [200, 100, 200],
-      tag: data.id ? String(data.id) : 'push-' + Date.now(),
-      renotify: true,
-      requireInteraction: true,
-      data: {
-        url: targetUrl,
-        ...data,
-      },
-    };
-
-    event.waitUntil(
-      self.registration.showNotification(title, options).then(() => {
-        // Update badge on push
-        const rawCount = data.unread_count;
-        const count = rawCount ? parseInt(rawCount, 10) : 1;
-        if (self.navigator && self.navigator.setAppBadge) {
-          self.navigator.setAppBadge(count).catch(() => {});
-        }
-      })
-    );
-  } catch (e) {
-    // If not JSON, show text
-    const text = event.data.text();
-    if (text) {
-      event.waitUntil(
-        self.registration.showNotification('نظام المشتريات', {
-          body: text,
-          icon: '/icon-192x192.png',
-          dir: 'rtl',
-          lang: 'ar',
-        })
-      );
-    }
-  }
-});
-
 // Push notification click handler - opens the window or focuses open tab with direct deep link
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   if (self.navigator && self.navigator.clearAppBadge) {
     self.navigator.clearAppBadge().catch(() => {});
   }
-  const rawUrl = event.notification.data?.url || event.notification.data?.fcmOptions?.link || '/notifications';
+  const rawUrl = event.notification.data?.url
+    || event.notification.data?.fcmOptions?.link
+    || event.notification.data?.FCM_MSG?.fcmOptions?.link
+    || event.notification.data?.FCM_MSG?.data?.url
+    || '/notifications';
   const targetUrl = rawUrl.startsWith('http') ? rawUrl : new URL(rawUrl, self.location.origin).href;
 
   event.waitUntil(

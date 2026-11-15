@@ -107,6 +107,11 @@ class FcmService
         $stringData['body'] = $body;
         $stringData['url'] = $data['url'] ?? '/notifications';
 
+        // One tag per document, so a newer push for the same document replaces the older one on the phone.
+        $notificationTag = ! empty($data['notifiable_type']) && ! empty($data['notifiable_id'])
+            ? 'ishbilia-' . class_basename((string) $data['notifiable_type']) . '-' . $data['notifiable_id']
+            : 'ishbilia-' . md5($title . '|' . $body);
+
         $sentCount = 0;
         $failedCount = 0;
         $prunedCount = 0;
@@ -134,6 +139,8 @@ class FcmService
                                 'lang' => 'ar',
                                 'vibrate' => [200, 100, 200],
                                 'requireInteraction' => true,
+                                'tag' => $notificationTag,
+                                'renotify' => true,
                             ],
                             'fcm_options' => [
                                 'link' => $data['url'] ?? '/notifications',
@@ -145,6 +152,7 @@ class FcmService
                             'notification' => [
                                 'title' => $title,
                                 'body' => $body,
+                                'tag' => $notificationTag,
                                 'sound' => 'default',
                                 'default_sound' => true,
                                 'default_vibrate_timings' => true,

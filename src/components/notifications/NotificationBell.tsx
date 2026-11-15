@@ -180,7 +180,14 @@ export const NotificationBell: React.FC = () => {
       }
       const title = payload.notification?.title || payload.data?.title || 'إشعار فوري جديد';
       const body = payload.notification?.body || payload.data?.body || 'لديك تحديث جديد بالنظام.';
-      showNativeSystemNotification(title, { body, tag: `fcm-${Date.now()}` });
+      // Same tag as the server push, so the two mounted bells (mobile + desktop header)
+      // and a repeat push for the same document collapse into one system notification.
+      const notifiableType = String(payload.data?.notifiable_type || '').split('\\').pop();
+      const notifiableId = payload.data?.notifiable_id;
+      const tag = notifiableType && notifiableId
+        ? `ishbilia-${notifiableType}-${notifiableId}`
+        : `ishbilia-${title}-${body}`.slice(0, 120);
+      showNativeSystemNotification(title, { body, tag, data: { url: payload.data?.url || '/notifications' } });
     });
 
     // Mobile visibility and focus listeners (instant sync when phone is unlocked or tab is opened)
