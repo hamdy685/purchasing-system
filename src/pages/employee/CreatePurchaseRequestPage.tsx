@@ -240,7 +240,9 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
   const { hasRole, user } = useAuth();
   const effectiveInitialType: PurchaseRequestType = isComplementaryRoute
     ? 'COMPLEMENTARY'
-    : getDefaultRequestTypeForDepartment(user?.department);
+    : hasRole('general_manager')
+      ? 'OFFICE_SUPPLIES'
+      : getDefaultRequestTypeForDepartment(user?.department);
   const isGeneralManager = hasRole('general_manager') || hasRole('execution_manager');
   // Procurement and the financial manager skip the reviewer, so they choose the receiver and warehouse route like one.
   const isReviewer = !isGeneralManager && (hasRole('reviewer') || hasRole('procurement_manager') || hasRole('accountant'));
