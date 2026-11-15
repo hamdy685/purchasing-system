@@ -240,7 +240,7 @@ export const CreatePurchaseRequestPage: React.FC<CreatePurchaseRequestPageProps>
   const { hasRole, user } = useAuth();
   const effectiveInitialType: PurchaseRequestType = isComplementaryRoute
     ? 'COMPLEMENTARY'
-    : hasRole('general_manager')
+    : hasRole('general_manager') || hasRole('execution_manager')
       ? 'OFFICE_SUPPLIES'
       : getDefaultRequestTypeForDepartment(user?.department);
   const isGeneralManager = hasRole('general_manager') || hasRole('execution_manager');
