@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { getAssignedReceiptsApi, type ReceiptRecord } from '../../api/purchaseReceipts';
 import { Button } from '../../components/ui/Button';
 import { Card, KpiPill, KpiPillsBar } from '../../components/ui/Card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/Table';
@@ -60,6 +61,7 @@ const receiptValue = (receipt: ApprovedReceipt) => {
 export const SiteAccountantDashboardPage: React.FC = () => {
   const { user, hasRole } = useAuth();
   const [receipts, setReceipts] = useState<ApprovedReceipt[]>([]);
+  const [toReceive, setToReceive] = useState<ReceiptRecord[]>([]);
   const [invoices, setInvoices] = useState<SupplierInvoice[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [ownRequests, setOwnRequests] = useState<PurchaseRequest[]>([]);
@@ -93,13 +95,14 @@ export const SiteAccountantDashboardPage: React.FC = () => {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const [receiptsData, recordedData, invoicesData, posData, requestsData, transfersData] = await Promise.all([
+      const [receiptsData, recordedData, invoicesData, posData, requestsData, transfersData, toReceiveData] = await Promise.all([
         getApprovedReceiptsForAccountingApi({ status: 'pending' }).catch(() => []),
         getApprovedReceiptsForAccountingApi({ recorded: true }).catch(() => []),
         getSupplierInvoicesApi().catch(() => []),
         getAccountingPurchaseOrdersApi().catch(() => []),
         getOwnPurchaseRequestsApi().catch(() => []),
         getAccountingPendingMaterialTransfersApi().catch(() => ({ data: [] })),
+        getAssignedReceiptsApi().catch(() => []),
       ]);
       setReceipts(receiptsData || []);
       setRecordedReceipts(recordedData || []);
@@ -107,6 +110,7 @@ export const SiteAccountantDashboardPage: React.FC = () => {
       setPurchaseOrders(posData || []);
       setOwnRequests(requestsData || []);
       setTransfers(transfersData?.data || []);
+      setToReceive(Array.isArray(toReceiveData) ? toReceiveData : []);
     } catch (err) {
       if (!silent) setError(parseApiError(err).message);
     } finally {
@@ -247,6 +251,30 @@ export const SiteAccountantDashboardPage: React.FC = () => {
   // Build Action Required Inbox Items
   const actionInboxItems: ActionInboxItem[] = useMemo(() => {
     const items: ActionInboxItem[] = [];
+
+    // 0. Orders the accountant requested and must receive (assigned as the receiver)
+    for (const r of toReceive) {
+      if (r.status !== 'PENDING_SITE_ENGINEER' && r.status !== 'WAREHOUSE_RECEIPT_SUBMITTED') continue;
+      const assignedTo = [r.site_engineer_user_id, r.receiver_user_id, r.actual_receiver_user_id];
+      if (!user?.id || !assignedTo.some((id) => Number(id) === Number(user.id))) continue;
+      const po = r.purchase_order;
+      items.push({
+        id: `to-receive-${r.id}`,
+        rawId: r.id,
+        type: 'RECEIPT',
+        code: r.receipt_number || `REC-${r.id}`,
+        title: 'استلام طلبك',
+        subtitle: po?.po_number ? `أمر الشراء ${po.po_number}` : undefined,
+        stageBadge: { text: 'بانتظار استلامك', icon: '📦', className: 'bg-sky-500/20 text-sky-300 border-sky-500/50' },
+        department: r.purchase_request?.department?.name || po?.purchase_request?.department?.name,
+        supplier: po?.supplier?.company_name,
+        urgency: 'HIGH',
+        reason: 'المواد وصلت والاستلام باسمك. مطلوب مراجعة الكميات واعتماد إذن الاستلام.',
+        actionUrl: `/receipts/${r.id}/inspect`,
+        actionLabel: 'استلام واعتماد',
+        created_at: r.created_at || undefined,
+      });
+    }
 
     // 1. Approved Receipts waiting for recording
     for (const receipt of receipts) {
@@ -390,7 +418,7 @@ export const SiteAccountantDashboardPage: React.FC = () => {
     }
 
     return items;
-  }, [receipts, pendingMatchInvoices, draftRequests, transfers]);
+  }, [receipts, pendingMatchInvoices, draftRequests, transfers, toReceive, user?.id]);
 
   const handleMatchInvoice = async (invoice: SupplierInvoice) => {
     setError(null);

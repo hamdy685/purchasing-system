@@ -201,7 +201,8 @@ class PurchaseReceiptController extends Controller
     public function update(Request $request, string|int $id)
     {
         $user = $request->user();
-        if ($user->hasRole('general_accountant') || ! ($user->hasRole('admin') || $user->hasRole('general_manager') || $user->hasPermission('purchase_receipt.edit') || ($user->hasRole('reviewer') && $user->hasPermission('purchase_request.review')))) {
+        $receipt = PurchaseReceipt::findOrFail((int) $id);
+        if (! $this->canActOnFieldReceipt($user, $receipt, 'purchase_receipt.edit')) {
             return response()->json(['message' => 'غير مصرح للمحاسب العام أو المستخدم الحالي بتعديل أذونات الاستلام الميدانية.'], 403);
         }
 
@@ -212,7 +213,6 @@ class PurchaseReceiptController extends Controller
             'items.*.received_quantity' => ['required', 'numeric', 'gte:0'],
             'items.*.notes' => ['nullable', 'string', 'max:1000'],
         ]);
-        $receipt = PurchaseReceipt::findOrFail((int) $id);
 
         try {
             $updated = $this->service->updateBySiteEngineer(
@@ -233,7 +233,8 @@ class PurchaseReceiptController extends Controller
     public function approve(Request $request, string|int $id)
     {
         $user = $request->user();
-        if ($user->hasRole('general_accountant') || ! ($user->hasRole('admin') || $user->hasRole('general_manager') || $user->hasPermission('purchase_receipt.approve') || ($user->hasRole('reviewer') && $user->hasPermission('purchase_request.review')))) {
+        $receipt = PurchaseReceipt::findOrFail((int) $id);
+        if (! $this->canActOnFieldReceipt($user, $receipt, 'purchase_receipt.approve')) {
             return response()->json(['message' => 'غير مصرح للمحاسب العام أو المستخدم الحالي باعتماد أذونات الاستلام الميدانية.'], 403);
         }
 
@@ -244,7 +245,6 @@ class PurchaseReceiptController extends Controller
             'items.*.received_quantity' => ['required_with:items', 'numeric', 'gte:0'],
             'items.*.notes' => ['nullable', 'string', 'max:1000'],
         ]);
-        $receipt = PurchaseReceipt::findOrFail((int) $id);
 
         try {
             if (! empty($validated['items'])) {
@@ -268,6 +268,34 @@ class PurchaseReceiptController extends Controller
         }
 
         return response()->json(['message' => 'تم اعتماد إذن الاستلام وإرساله إلى الحسابات.', 'data' => $approved]);
+    }
+
+    /**
+     * Field receipt edit/approve: role-based access, or the user the receipt is assigned to as
+     * site engineer / receiver (e.g. an accountant who requested and receives their own order).
+     * General accountants may act only on receipts assigned to them.
+     */
+    private function canActOnFieldReceipt($user, PurchaseReceipt $receipt, string $permission): bool
+    {
+        $isAssigned = in_array((int) $user->id, array_map('intval', array_filter([
+            $receipt->site_engineer_user_id,
+            $receipt->receiver_user_id,
+        ])), true);
+        if ($isAssigned) {
+            // The order may sit outside the user's PO data scope (e.g. an accountant's own order
+            // in another department); access is settled here, so load it unscoped for the workflow.
+            if ($receipt->purchase_order_id) {
+                $receipt->setRelation('purchaseOrder', PurchaseOrder::withoutGlobalScopes()->find($receipt->purchase_order_id));
+            }
+
+            return true;
+        }
+        if ($user->hasRole('general_accountant')) {
+            return false;
+        }
+
+        return $user->hasRole('admin') || $user->hasRole('general_manager') || $user->hasPermission($permission)
+            || ($user->hasRole('reviewer') && $user->hasPermission('purchase_request.review'));
     }
 
     public function confirmOfficeReceipt(Request $request, int $purchaseOrderId)

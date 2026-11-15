@@ -323,8 +323,13 @@ class DataIsolationScope implements Scope
         if ($user->hasRole('site_accountant') || $user->hasAnyRole(['licenses_accountant', 'buffet_accountant', 'development_accountant', 'accountant', 'general_accountant']) || $user->isGeneralAccountant()) {
             $allowedCodes = app(SupplierInvoiceService::class)->getAllowedDepartmentCodesForAccountant($user);
             if ($allowedCodes !== null) {
-                $builder->whereHas('purchaseRequest.department', function ($dq) use ($allowedCodes) {
-                    $dq->whereIn('code', $allowedCodes);
+                // Plus receipts assigned to the accountant as receiver (their own order).
+                $builder->where(function (Builder $q) use ($user, $allowedCodes) {
+                    $q->whereHas('purchaseRequest.department', function ($dq) use ($allowedCodes) {
+                        $dq->whereIn('code', $allowedCodes);
+                    })
+                      ->orWhere('site_engineer_user_id', $user->id)
+                      ->orWhere('receiver_user_id', $user->id);
                 });
             }
             return;
